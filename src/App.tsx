@@ -93,7 +93,7 @@ export function App({ state, start, commit, markAlbum, historyKey, sendMessage, 
   sendMessage?: SendMessage
   eraseAccount?: () => Promise<null>
   authStopped?: boolean
-  hosted?: { signIn: ReactNode, placeholder?: ReactNode, notice?: ReactNode, logout?: () => void }
+  hosted?: { signIn: ReactNode, landing?: ReactNode, placeholder?: ReactNode, notice?: ReactNode, logout?: () => void }
 }) {
   const [path, setPath] = useState(location.pathname)
   const [error, setError] = useState('')
@@ -203,7 +203,7 @@ export function App({ state, start, commit, markAlbum, historyKey, sendMessage, 
             area === '/instellingen' ? <SettingsPage state={state} update={update} demoKey={historyKey}
               eraseAccount={eraseAccount} usesDescope={!!hosted} /> :
             <EmptyState title="Deze pagina bestaat niet" action={<Button component="a" href="/ruilen">Ga naar Ruilen</Button>}>Je vindt alle beschikbare stickers bij Ruilen.</EmptyState>
-          ) : hosted?.placeholder ? hosted.placeholder : authStopped ? (
+          ) : area === '/ruilen' && hosted?.landing ? hosted.landing : hosted?.placeholder ? hosted.placeholder : authStopped ? (
             <EmptyState title="Proefaccount kon niet openen" action={<Button onClick={() => window.location.reload()}>Opnieuw proberen</Button>}>
               <Anchor href="/inloggen?proef=demo" data-reload>Terug naar inloggen</Anchor>
               Controleer of de lokale Convex-server draait.
