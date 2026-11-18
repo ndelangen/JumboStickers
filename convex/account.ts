@@ -2,7 +2,8 @@ import { ConvexError, v } from 'convex/values'
 import type { Id } from './_generated/dataModel'
 import { internal } from './_generated/api'
 import { internalMutation, mutation, type MutationCtx } from './_generated/server'
-import { currentCollector } from './collectors'
+import { collectorByIdentity, currentCollector, isDescopeSession } from './collectors'
+import { localOrigin } from './localOrigin'
 
 const batchSize = 100
 
@@ -41,11 +42,28 @@ async function purgeTrades(ctx: MutationCtx, collector: Id<'collectors'>) {
   return outgoing.length + incoming.length + offers.length + promised.length > 0
 }
 
+export const registerOwn = mutation({
+  args: { displayName: v.string() },
+  returns: v.null(),
+  handler: async (ctx, { displayName }) => {
+    const identity = await ctx.auth.getUserIdentity()
+    if (!identity || !isDescopeSession(identity)) throw new ConvexError('Log in via de link in je e-mail.')
+    const existing = await collectorByIdentity(ctx, identity.tokenIdentifier)
+    if (existing?.deleting) throw new ConvexError('Je vorige profiel wordt nog gewist. Probeer het straks opnieuw.')
+    if (existing) return null
+    const name = displayName.trim()
+    if (!name || name.length > 32) throw new ConvexError('Kies een schermnaam van maximaal 32 tekens.')
+    await ctx.db.insert('collectors', { identity: identity.tokenIdentifier, displayName: name, album: {}, digest: false })
+    return null
+  },
+})
+
 export const eraseOwn = mutation({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
-    if (!await ctx.auth.getUserIdentity()) throw new ConvexError('Log in om je account te verwijderen.')
+    const identity = await ctx.auth.getUserIdentity()
+    if (!identity || identity.issuer !== localOrigin()) throw new ConvexError('Accountverwijdering is alleen beschikbaar voor de lokale proefaccounts.')
     const collector = await currentCollector(ctx)
     if (!collector) return null
     await ctx.db.patch('collectors', collector._id, { deleting: true, displayName: '', album: {}, digest: false })

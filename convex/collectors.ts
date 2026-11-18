@@ -1,3 +1,4 @@
+import type { UserIdentity } from 'convex/server'
 import { ConvexError } from 'convex/values'
 import type { MutationCtx, QueryCtx } from './_generated/server'
 import { localOrigin } from './localOrigin'
@@ -6,9 +7,14 @@ export function collectorByIdentity(ctx: QueryCtx | MutationCtx, identity: strin
   return ctx.db.query('collectors').withIndex('by_identity', (q) => q.eq('identity', identity)).unique()
 }
 
+export function isDescopeSession(identity: UserIdentity) {
+  return identity.issuer !== localOrigin() && identity.drn === 'DS' && identity.danu !== true
+}
+
 export async function currentCollector(ctx: QueryCtx | MutationCtx) {
   const identity = await ctx.auth.getUserIdentity()
   if (!identity) return null
+  if (identity.issuer !== localOrigin() && !isDescopeSession(identity)) return null
   const localId = ctx.db.normalizeId('collectors', identity.subject)
   const collector = identity.issuer === localOrigin()
     ? localId && await ctx.db.get('collectors', localId)
