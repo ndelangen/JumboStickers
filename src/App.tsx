@@ -58,7 +58,7 @@ export function DemoApp() {
 
 export function ExchangeApp({ selection }: { selection: LocalSelection }) {
   const { isLoading, isAuthenticated } = useConvexAuth()
-  const state = useQuery(api.exchange.get, isAuthenticated ? {} : 'skip')
+  const state = useQuery(api.exchange.get, isAuthenticated ? { personalOnly: true } : 'skip')
   const mutate = useMutation(api.exchange.update)
   const markAlbum = useMutation(api.exchange.markAlbum)
   const sendMessage = useMutation(api.exchange.send)

@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
+import { usePaginatedQuery } from 'convex-helpers/react'
 import { Avatar, Button, Group, Modal, Paper, Stack, Text, TextInput, Title } from '@mantine/core'
 import { ArrowRight, Check, HandHeart, Search, Settings2 } from 'lucide-react'
 import type { District } from '../../convex/districts'
 import { SearchDistrictsField } from '../DistrictFields'
 import { EmptyState, AlbumProgress, StatusStamp, StickerDetails, StickerNumber, PhotoCredit } from '../ui'
-import { interestLabel, myOffers, personFor, type DemoState, type Offer, type Update } from '../demo'
-import { matchesSticker, stickerFor } from '../catalog'
+import { initialsFor, interestLabel, myOffers, personFor, type DemoState, type Offer, type Update } from '../demo'
+import { catalog, matchesSticker, stickerFor } from '../catalog'
+import { api } from '../../convex/_generated/api'
 
 const filters = [
   { id: 'available', label: 'Beschikbaar' },
@@ -14,6 +16,8 @@ const filters = [
   { id: 'mine', label: 'Mijn aanbod' },
 ] as const
 type Filter = (typeof filters)[number]['id']
+
+const pageSize = 24
 
 export function requestedSticker() {
   const value = new URLSearchParams(location.search).get('sticker')
@@ -53,7 +57,24 @@ export function OffersPage({ state, update, navigate, signedIn }: {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState('')
-  const selected = state.offers.find((offer) => offer.id === selectedId)
+  const searchText = search.trim()
+  function matchesSearch(sticker: (typeof catalog)[number]) {
+    return linkedSticker ? sticker.number === Number(linkedSticker) : matchesSticker(sticker, searchText)
+  }
+
+  const useMarketplace = signedIn && filter !== 'mine'
+  const scope = filter === 'wanted' || linkedSticker || searchText
+    ? catalog.filter((sticker) => matchesSearch(sticker) &&
+        (filter !== 'wanted' || state.album[sticker.number] === 'wanted')).map(({ number }) => number)
+    : null
+  const market = usePaginatedQuery(api.marketplace.list, useMarketplace ? {
+    filter: filter === 'interest' ? 'interest' : 'available',
+    numbers: scope,
+    districts: isBrowsing ? districts : [],
+  } : 'skip', { initialNumItems: pageSize })
+  const more = useMarketplace && (market.status === 'CanLoadMore' || market.status === 'LoadingMore')
+  const loading = useMarketplace && market.status === 'LoadingFirstPage'
+  const listings = new Map<string, (typeof market.results)[number]>(market.results.map((item) => [item.offer.id, item]))
   const doubles = myOffers(state)
 
   useEffect(() => {
@@ -61,14 +82,22 @@ export function OffersPage({ state, update, navigate, signedIn }: {
   }, [linkedSticker])
 
   function canTrade(offer: Offer) {
+    const listing = listings.get(offer.id)
+    if (listing) return listing.canTrade
     return state.album[offer.number] === 'wanted' && doubles.some((mine) =>
       !mine.promisedTo && personFor(offer.owner, state).wants.includes(mine.number),
     )
   }
 
-  const offers = state.offers.filter((offer) => {
+  function offerName(offer: Offer) {
+    return listings.get(offer.id)?.displayName ?? personFor(offer.owner, state).name
+  }
+
+  const source = useMarketplace ? market.results.map(({ offer }) => offer) : state.offers
+  const offers = source.filter((offer) => {
+    if (useMarketplace) return true
     const sticker = stickerFor(offer.number)
-    if (!sticker || (linkedSticker ? sticker.number !== Number(linkedSticker) : !matchesSticker(sticker, search))) return false
+    if (!sticker || !matchesSearch(sticker)) return false
     if (isBrowsing && districts.length) {
       const district = personFor(offer.owner, state).district
       if (!district || !districts.includes(district)) return false
@@ -80,6 +109,7 @@ export function OffersPage({ state, update, navigate, signedIn }: {
       case 'available': return offer.owner !== 'me' && !offer.promisedTo
     }
   }).sort((first, second) => Number(canTrade(second)) - Number(canTrade(first)))
+  const selected = offers.find((offer) => offer.id === selectedId)
 
   async function handle(updateCall: () => Promise<unknown>) {
     setBusy(true)
@@ -108,7 +138,9 @@ export function OffersPage({ state, update, navigate, signedIn }: {
         <section id="aanbod" aria-labelledby="browse-title" className="browse">
           <div className="browse-title">
             <Title order={2} id="browse-title">Ruilaanbod</Title>
-            <Text c="dimmed" size="sm" aria-live="polite">{offers.length} {offers.length === 1 ? 'exemplaar' : 'exemplaren'}</Text>
+            {!loading && <Text c="dimmed" size="sm" aria-live="polite" aria-atomic="true">
+              {offers.length} {offers.length === 1 ? 'exemplaar' : 'exemplaren'}{more && ' getoond'}
+            </Text>}
           </div>
           <div className="browse-toolbar">
             <div className="browse-search">
@@ -126,13 +158,15 @@ export function OffersPage({ state, update, navigate, signedIn }: {
           </div>
           {feedback && <Text role="status" c="dimmed" mb="xs">{feedback}</Text>}
 
-          {offers.length ? (
+          {loading ? <Text role="status">Aanbod laden…</Text> : offers.length ? (
             <div className="offers">
               {offers.map((offer) => {
                 const mine = offer.owner === 'me'
                 const sticker = stickerFor(offer.number)
                 const active = offer.interested.includes('me')
-                const owner = personFor(offer.owner, state)
+                const ownerName = offerName(offer)
+                const listing = listings.get(offer.id)
+                const ownerDistrict = listing ? listing.district : personFor(offer.owner, state).district
                 const label = mine ? 'Beheer exemplaar' : active ? 'Bekijk gesprek' : 'Ik wil deze sticker'
                 return (
                   <Paper key={offer.id} className="offer paper-in" component="article" withBorder>
@@ -150,16 +184,16 @@ export function OffersPage({ state, update, navigate, signedIn }: {
                         <Text c="dimmed" size="xs" mt={3}>{sticker.theme} · pagina {sticker.page}</Text>
                       </div>}
                       <Group gap={8} className="offer-person" wrap="nowrap">
-                        <Avatar size={34} color="ochre" aria-hidden>{owner.initials}</Avatar>
+                        <Avatar size={34} color="ochre" aria-hidden>{initialsFor(ownerName)}</Avatar>
                         <div>
-                          <Text size="sm" fw={700}>{owner.name}</Text>
-                          {owner.district && <Text size="sm" c="dimmed">{owner.district}</Text>}
+                          <Text size="sm" fw={700}>{ownerName}</Text>
+                          {ownerDistrict && <Text size="sm" c="dimmed">{ownerDistrict}</Text>}
                           <Text size="sm" c="dimmed">{interestLabel(offer.interestCount ?? offer.interested.length)}</Text>
                         </div>
                       </Group>
                       <Button fullWidth size="sm" variant={active ? 'light' : 'outline'} disabled={!mine && !!offer.promisedTo && !active}
                         leftSection={mine ? <Settings2 size={15} aria-hidden /> : active ? <Check size={15} aria-hidden /> : undefined}
-                        aria-label={`${label} · sticker ${offer.number} van ${mine ? state.displayName : owner.name}`}
+                        aria-label={`${label} · sticker ${offer.number} van ${ownerName}`}
                         onClick={() => active ? void handle(() => openThread(offer)) : setSelectedId(offer.id)}>
                         {label}
                       </Button>
@@ -168,11 +202,16 @@ export function OffersPage({ state, update, navigate, signedIn }: {
                 )
               })}
             </div>
-          ) : (
+          ) : more ? <Text c="dimmed">Geen passende exemplaren in de geladen resultaten.</Text> : (
             <EmptyState title={filter === 'mine' ? 'Nog geen dubbelen aangeboden' : 'Geen stickers gevonden'}>
               {filter === 'mine' ? 'Zet een dubbel exemplaar in je album om het hier aan te bieden.' : isBrowsing && districts.length ? 'Pas de wijken aan of wis het wijkfilter.' : 'Probeer een ander nummer of een andere selectie.'}
             </EmptyState>
           )}
+          {more && <Group justify="center" mt="md">
+            <Button variant="light" loading={market.status === 'LoadingMore'} onClick={() => market.loadMore(pageSize)}>
+              Laad meer aanbod
+            </Button>
+          </Group>}
         </section>
         <aside className="album-aside"><AlbumProgress state={state} showLink /></aside>
       </div>
@@ -215,7 +254,7 @@ export function OffersPage({ state, update, navigate, signedIn }: {
           </Stack>
         ) : selected && (
           <Stack>
-            <Text>Toon interesse en open een privégesprek met {personFor(selected.owner, state).name}.</Text>
+            <Text>Toon interesse en open een privégesprek met {offerName(selected)}.</Text>
             <Button loading={busy} disabled={!!selected.promisedTo}
               leftSection={<HandHeart size={19} aria-hidden />} onClick={() => void handle(() => openThread(selected))}>Toon interesse</Button>
           </Stack>

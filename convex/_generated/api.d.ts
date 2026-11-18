@@ -19,6 +19,7 @@ import type * as exchange from "../exchange.js";
 import type * as http from "../http.js";
 import type * as localIdentity from "../localIdentity.js";
 import type * as localOrigin from "../localOrigin.js";
+import type * as marketplace from "../marketplace.js";
 
 import type {
   ApiFromModules,
@@ -38,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   localIdentity: typeof localIdentity;
   localOrigin: typeof localOrigin;
+  marketplace: typeof marketplace;
 }>;
 
 /**

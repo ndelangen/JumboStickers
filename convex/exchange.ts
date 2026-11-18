@@ -41,16 +41,16 @@ function threadView(thread: Doc<'conversations'>, viewer: Id<'collectors'>) {
 }
 
 export const get = query({
-  args: { sticker: v.optional(v.number()) },
+  args: { sticker: v.optional(v.number()), personalOnly: v.optional(v.boolean()) },
   returns: v.union(snapshotValidator, v.null()),
-  handler: async (ctx, { sticker }) => {
+  handler: async (ctx, { sticker, personalOnly }) => {
     const me = await currentCollector(ctx)
     if (!me) return null
 
     const [mine, general, linked, fromMe, forMe, opened, received, inbox] = await Promise.all([
       ownOffers(ctx, me._id),
-      ctx.db.query('offers').withIndex('by_status', (q) => q.eq('status', 'available')).take(localNetworkLimit),
-      sticker === undefined ? [] : ctx.db.query('offers').withIndex('by_status_and_number', (q) =>
+      personalOnly ? [] : ctx.db.query('offers').withIndex('by_status', (q) => q.eq('status', 'available')).take(localNetworkLimit),
+      personalOnly || sticker === undefined ? [] : ctx.db.query('offers').withIndex('by_status_and_number', (q) =>
         q.eq('status', 'available').eq('number', sticker)).take(50),
       ctx.db.query('interests').withIndex('by_collector', (q) => q.eq('collector', me._id)).take(localNetworkLimit),
       ctx.db.query('interests').withIndex('by_owner', (q) => q.eq('owner', me._id)).take(localNetworkLimit),

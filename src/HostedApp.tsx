@@ -90,8 +90,7 @@ function HostedExchange({ flowId }: { flowId: string }) {
   const session = useSession()
   const { logout } = useDescope()
   const { isAuthenticated, isLoading } = useConvexAuth()
-  const sticker = requestedSticker()
-  const state = useQuery(api.exchange.get, isAuthenticated ? sticker ? { sticker: Number(sticker) } : {} : 'skip')
+  const state = useQuery(api.exchange.get, isAuthenticated ? { personalOnly: true } : 'skip')
   const subject = session.claims?.sub
   const collectorId = state?.collectorId
   const register = useMutation(api.account.registerOwn)
