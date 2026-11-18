@@ -16,6 +16,7 @@ export const exchangeCommand = v.union(
   v.object({ type: v.literal('promise'), offerId: v.string(), person: v.union(v.string(), v.null()), expectedRecipient: v.optional(v.string()) }),
   v.object({ type: v.literal('finish'), offerId: v.string(), expectedRecipient: v.optional(v.string()) }),
   v.object({ type: v.literal('openThread'), offerId: v.string(), person: v.string() }),
+  v.object({ type: v.literal('removeThread'), threadId: v.string(), historyVersion: v.number() }),
   v.object({ type: v.literal('read'), messageId: v.string() }),
   v.object({ type: v.literal('exampleReply'), threadId: v.string() }),
   v.object({
@@ -76,8 +77,10 @@ export const start = mutation({
 })
 
 function threadWith(threads: State['threads'], offer: State['offers'][number], person: string) {
-  const id = `${offer.id}-${person}`
-  if (!threads.some((thread) => thread.id === id)) threads.unshift({ id, offerId: offer.id, number: offer.number, person })
+  const existing = threads.find((thread) => thread.offerId === offer.id && thread.person === person)
+  if (existing) return existing.id
+  const id = crypto.randomUUID()
+  threads.unshift({ id, offerId: offer.id, number: offer.number, person })
   return id
 }
 
@@ -156,6 +159,14 @@ export const update = mutation({
         digest: change.digest,
         ...(change.district === undefined ? {} : { district: change.district ?? undefined }),
         ...(change.searchDistricts === undefined ? {} : { searchDistricts: uniqueDistricts(change.searchDistricts) }),
+      })
+      return null
+    }
+
+    if (change.type === 'removeThread') {
+      await ctx.db.patch(row._id, {
+        threads: threads.filter((thread) => thread.id !== change.threadId),
+        inbox: inbox.filter((message) => message.threadId !== change.threadId),
       })
       return null
     }

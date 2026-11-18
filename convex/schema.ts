@@ -18,9 +18,10 @@ export const thread = v.object({
   offerId: v.string(),
   number: v.number(),
   person: v.string(),
+  historyVersion: v.optional(v.number()),
 })
 
-export const incoming = v.object({ id: v.string(), threadId: v.string(), text: v.string(), sentAt: v.number() })
+export const incoming = v.object({ id: v.string(), threadId: v.string(), text: v.string(), sentAt: v.number(), historyVersion: v.optional(v.number()) })
 
 export const demoStateFields = {
   album: v.record(v.string(), albumStatus),
@@ -72,10 +73,18 @@ export default defineSchema({
     number: v.number(),
     owner: v.id('collectors'),
     requester: v.id('collectors'),
+    ownerHidden: v.optional(v.literal(true)),
+    requesterHidden: v.optional(v.literal(true)),
+    ownerVisibleSince: v.optional(v.number()),
+    requesterVisibleSince: v.optional(v.number()),
+    ownerHistoryVersion: v.optional(v.number()),
+    requesterHistoryVersion: v.optional(v.number()),
   })
     .index('by_offer_and_requester', ['offer', 'requester'])
     .index('by_owner', ['owner'])
-    .index('by_requester', ['requester']),
+    .index('by_requester', ['requester'])
+    .index('by_owner_and_ownerHidden_and_ownerVisibleSince', ['owner', 'ownerHidden', 'ownerVisibleSince'])
+    .index('by_requester_and_requesterHidden_and_requesterVisibleSince', ['requester', 'requesterHidden', 'requesterVisibleSince']),
   unreadMessages: defineTable({
     conversation: v.id('conversations'),
     recipient: v.id('collectors'),
@@ -84,6 +93,7 @@ export default defineSchema({
   })
     .index('by_recipient_and_sender', ['recipient', 'sender'])
     .index('by_recipient', ['recipient'])
+    .index('by_recipient_and_conversation', ['recipient', 'conversation'])
     .index('by_conversation', ['conversation']),
   messageBlocks: defineTable({
     blocker: v.id('collectors'),
