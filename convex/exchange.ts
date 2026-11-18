@@ -8,7 +8,7 @@ import { currentCollector, requireCollector } from './collectors'
 import { albumStatus, demoStateFields } from './schema'
 
 const peopleValidator = v.record(v.string(), v.object({ name: v.string(), wants: v.array(v.number()) }))
-const snapshotValidator = v.object({ ...demoStateFields, people: peopleValidator })
+const snapshotValidator = v.object({ ...demoStateFields, people: peopleValidator, collectorId: v.id('collectors') })
 const inboxLimit = 250
 const localNetworkLimit = 3 * offerLimit
 const resendWindowMs = 24 * 60 * 60 * 1000
@@ -80,6 +80,7 @@ export const get = query({
     const threads = candidates.filter((thread) => active.has(thread.person))
     const threadIds = new Set(threads.map((thread) => thread.id))
     return {
+      collectorId: me._id,
       displayName: me.displayName,
       digest: me.digest,
       album: me.album,

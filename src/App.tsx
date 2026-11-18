@@ -1,7 +1,7 @@
 import { Alert, Anchor, Badge, Button, Group, Loader, Paper, Text, Title, VisuallyHidden } from '@mantine/core'
 import { useConvexAuth, useMutation, useQuery } from 'convex/react'
 import { ArrowLeftRight, BookOpen, MessageCircle, Settings, Sticker as StickerIcon } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { api } from '../convex/_generated/api'
 import { errorMessage, localDemoKey, type BulkMark, type DemoState, type SendMessage, type Update } from './demo'
 import { clearLocalSession, type LocalSelection } from './LocalAccounts'
@@ -45,40 +45,46 @@ export function ExchangeApp({ selection }: { selection: LocalSelection }) {
   const eraseAccount = useMutation(api.account.eraseOwn)
   const update = useCallback<Update>((command) => mutate({ command }), [mutate])
   if (selection.session && (state === null || (!isLoading && selection.revoked))) {
-    return <FinishAccountRemoval historyKey={selection.session.historyKey} />
+    return <FinishAccountRemoval historyKey={selection.session.historyKey} signOut={clearLocalSession} />
   }
-  return <App state={state} commit={update} markAlbum={markAlbum} eraseAccount={eraseAccount}
+  return <App state={state} commit={update} markAlbum={markAlbum} eraseAccount={() => eraseAccount({})}
     sendMessage={sendMessage} historyKey={selection.session?.historyKey ?? `local:${selection.account}`}
     authStopped={!isLoading && !isAuthenticated} />
 }
 
-function FinishAccountRemoval({ historyKey }: { historyKey: string }) {
+export function FinishAccountRemoval({ historyKey, signOut, donePath = '/inloggen?account=verwijderd' }: {
+  historyKey: string
+  signOut: () => void | Promise<void>
+  donePath?: string
+}) {
   const [attempt, setAttempt] = useState(0)
-  const [failed, setFailed] = useState(false)
+  const [failure, setFailure] = useState<'history' | 'signOut' | null>(null)
 
   useEffect(() => {
     let active = true
-    void retireLocalHistory(historyKey).then(() => {
+    void retireLocalHistory(historyKey).then(async () => {
       if (!active) return
-      clearLocalSession()
-      location.replace('/inloggen?account=verwijderd')
-    }).catch(() => {
-      if (active) setFailed(true)
-    })
+      try {
+        await signOut()
+        if (active) location.replace(donePath)
+      } catch {
+        if (active) setFailure('signOut')
+      }
+    }, () => { if (active) setFailure('history') })
     return () => { active = false }
-  }, [attempt, historyKey])
+  }, [attempt, donePath, historyKey, signOut])
 
   return <main className="site-width loading">
-    {failed ? (
-      <EmptyState title="Chatgeschiedenis wissen is niet gelukt" action={<Button onClick={() => {
-        setFailed(false)
+    {failure ? (
+      <EmptyState title={failure === 'history' ? 'Chatgeschiedenis wissen is niet gelukt' : 'Uitloggen is niet gelukt'} action={<Button onClick={() => {
+        setFailure(null)
         setAttempt((value) => value + 1)
-      }}>Opnieuw proberen</Button>}>Je account is gesloten. Probeer de chatgeschiedenis in deze browser opnieuw te wissen.</EmptyState>
-    ) : <Group role="status"><Loader size="sm" /><Text>We wissen je chatgeschiedenis uit deze browser…</Text></Group>}
+      }}>Opnieuw proberen</Button>}>Je Stickerruil-account is gesloten.</EmptyState>
+    ) : <Group role="status"><Loader size="sm" /><Text>We wissen je chatgeschiedenis en loggen je uit…</Text></Group>}
   </main>
 }
 
-function App({ state, start, commit, markAlbum, historyKey, sendMessage, eraseAccount, authStopped = false }: {
+export function App({ state, start, commit, markAlbum, historyKey, sendMessage, eraseAccount, hosted, authStopped = false }: {
   state: DemoState | null | undefined
   start?: () => Promise<null>
   commit: Update
@@ -87,6 +93,7 @@ function App({ state, start, commit, markAlbum, historyKey, sendMessage, eraseAc
   sendMessage?: SendMessage
   eraseAccount?: () => Promise<null>
   authStopped?: boolean
+  hosted?: { signIn: ReactNode, placeholder?: ReactNode, notice?: ReactNode, logout?: () => void }
 }) {
   const [path, setPath] = useState(location.pathname)
   const [error, setError] = useState('')
@@ -174,12 +181,14 @@ function App({ state, start, commit, markAlbum, historyKey, sendMessage, eraseAc
           <VisuallyHidden role="status">{unread > 0 && <span key={arrival}>{unreadLabel}</span>}</VisuallyHidden>
         </div>
       </header>
-      <div className="demo-strip">
+      {(!hosted || hosted.logout) && <div className="demo-strip">
         <div className="site-width">
-          <Badge variant="light" color="ochre">{sendMessage ? `Proefaccount · ${state?.displayName ?? '…'}` : 'Voorbeeldgegevens'}</Badge>
-          {sendMessage && <Anchor href="/inloggen" size="sm" fw={700}>Proefaccounts</Anchor>}
+          <Badge variant="light" color="ochre">{hosted ? state?.displayName : sendMessage ? `Proefaccount · ${state?.displayName ?? '…'}` : 'Voorbeeldgegevens'}</Badge>
+          {hosted?.logout ? <Button variant="subtle" size="compact-sm" onClick={hosted.logout}>Uitloggen</Button> :
+            sendMessage && <Anchor href="/inloggen" size="sm" fw={700}>Proefaccounts</Anchor>}
         </div>
-      </div>
+      </div>}
+      {hosted?.notice}
       {error && (
         <Alert className="app-error" color="red" title="Dat ging niet goed" withCloseButton closeButtonLabel="Sluit melding" onClose={() => setError('')}>
           {error}
@@ -187,13 +196,14 @@ function App({ state, start, commit, markAlbum, historyKey, sendMessage, eraseAc
       )}
       <main className="site-width" id="inhoud" ref={content}>
         <div className="page-transition" key={area}>
-          {area === '/inloggen' ? <SignInPage navigate={navigate} /> : state ? (
+          {area === '/inloggen' ? hosted?.signIn ?? <SignInPage navigate={navigate} /> : state ? (
             area === '/ruilen' ? <OffersPage state={state} update={update} navigate={navigate} signedIn={!!sendMessage} /> :
             area === '/album' ? <AlbumPage state={state} update={update} markAlbum={markAlbum} /> :
             area === '/berichten' ? <MessagesPage state={state} threadId={path.split('/')[2]} demoKey={historyKey} update={update} sendMessage={sendMessage} /> :
-            area === '/instellingen' ? <SettingsPage state={state} update={update} demoKey={historyKey} eraseAccount={eraseAccount} /> :
+            area === '/instellingen' ? <SettingsPage state={state} update={update} demoKey={historyKey}
+              eraseAccount={eraseAccount} usesDescope={!!hosted} /> :
             <EmptyState title="Deze pagina bestaat niet" action={<Button component="a" href="/ruilen">Ga naar Ruilen</Button>}>Je vindt alle beschikbare stickers bij Ruilen.</EmptyState>
-          ) : authStopped ? (
+          ) : hosted?.placeholder ? hosted.placeholder : authStopped ? (
             <EmptyState title="Proefaccount kon niet openen" action={<Button onClick={() => window.location.reload()}>Opnieuw proberen</Button>}>
               <Anchor href="/inloggen?proef=demo" data-reload>Terug naar inloggen</Anchor>
               Controleer of de lokale Convex-server draait.

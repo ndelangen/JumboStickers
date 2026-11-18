@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MantineProvider } from '@mantine/core'
 import { ConvexProvider, ConvexReactClient } from 'convex/react'
@@ -12,7 +13,11 @@ import { DemoApp, ExchangeApp, LocalSetup } from './App'
 import { LocalAccountsProvider, localAuthProvider, selectedAccount } from './LocalAccounts'
 import { albumTheme, albumVariables } from './theme'
 
+const HostedApp = lazy(() => import('./HostedApp').then(({ HostedApp }) => ({ default: HostedApp })))
 const configured = import.meta.env.VITE_CONVEX_URL
+const projectId = import.meta.env.VITE_DESCOPE_PROJECT_ID
+const baseUrl = import.meta.env.VITE_DESCOPE_API_URL
+const flowId = import.meta.env.VITE_DESCOPE_FLOW_ID
 const local = /^http:\/\/(?:127\.0\.0\.1|localhost):\d+\/?$/u.test(configured ?? '') ? configured : null
 const client = local ? new ConvexReactClient(local) : null
 const account = local ? selectedAccount(local) : null
@@ -23,7 +28,11 @@ const app = client && local
       <ExchangeApp selection={account} />
     </LocalAccountsProvider>
   ) : <ConvexProvider client={client}><DemoApp /></ConvexProvider>
-  : <LocalSetup />
+  : /^https:\/\/[a-z0-9.-]+\.convex\.cloud\/?$/u.test(configured ?? '') && projectId && baseUrl && flowId
+    ? <Suspense fallback={<p role="status">Even laden…</p>}>
+      <HostedApp client={new ConvexReactClient(configured)} config={{ projectId, baseUrl, flowId }} />
+    </Suspense>
+    : <LocalSetup />
 
 createRoot(document.getElementById('root')!).render(
   <MantineProvider forceColorScheme="light" theme={albumTheme} cssVariablesResolver={albumVariables}>
