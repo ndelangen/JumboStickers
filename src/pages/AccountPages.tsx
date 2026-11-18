@@ -90,9 +90,9 @@ export function SettingsPage({ state, update, demoKey, eraseAccount, usesDescope
               setDisplayName(event.currentTarget.value)
               setFeedback('')
             }} />
-            <Switch label="Mail me over nieuwe ruilkansen" checked={digest}
+            {!usesDescope && <Switch label="Mail me over nieuwe ruilkansen" checked={digest}
               description="Eén overzicht om 16.00 uur met stickers die je zoekt en waar nog niemand om heeft gevraagd."
-              onChange={(event) => { setDigest(event.currentTarget.checked); setFeedback('') }} />
+              onChange={(event) => { setDigest(event.currentTarget.checked); setFeedback('') }} />}
             <Group><Button loading={busy} type="submit">Opslaan</Button><Text role="status" c="dimmed">{feedback}</Text></Group>
           </Stack>
         </Paper>
