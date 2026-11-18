@@ -1,7 +1,7 @@
 import { ConvexError, v, type Infer } from 'convex/values'
 import { mutation, query } from './_generated/server'
 import { albumStatus, demoStateFields } from './schema'
-import { albumLength, offerLimit, validNumbers } from './album'
+import { batchAlbumArgs, offerLimit, validNumbers } from './album'
 import { localOrigin } from './localOrigin'
 
 const stateValidator = v.object(demoStateFields)
@@ -81,8 +81,7 @@ function newOffer(number: number): State['offers'][number] {
 export const markAlbum = mutation({
   args: {
     key: v.string(),
-    scope: v.union(v.literal('all'), v.literal('empty'), v.array(v.number())),
-    status: v.union(albumStatus, v.literal('double')),
+    ...batchAlbumArgs,
   },
   returns: v.object({ changed: v.number(), protectedCount: v.number() }),
   handler: async (ctx, { key, scope, status }) => {
@@ -91,15 +90,9 @@ export const markAlbum = mutation({
     if (!row) throw new ConvexError('Open de voorbeeldomgeving opnieuw.')
     const { album, offers } = row
     const offered = new Set(offers.filter((offer) => offer.owner === 'me').map((offer) => offer.number))
-    const numbers = typeof scope === 'string'
-      ? Array.from({ length: albumLength }, (_, index) => index + 1)
-      : validNumbers(scope)
-    const matching = scope === 'empty' ? numbers.filter((number) => !album[number] && !offered.has(number)) : numbers
-    const protectedCount = status === 'wanted' ? matching.filter((number) => offered.has(number)).length : 0
-    const changed = matching.filter((number) => {
-      if (status === 'double') return typeof scope !== 'string' || !offered.has(number)
-      return album[number] !== status && (status !== 'wanted' || !offered.has(number))
-    })
+    const numbers = validNumbers(scope)
+    const protectedCount = status === 'wanted' ? numbers.filter((number) => offered.has(number)).length : 0
+    const changed = numbers.filter((number) => !offered.has(number) && (status === 'double' || album[number] !== status))
     if (status === 'double' && offers.length + changed.length > offerLimit) {
       throw new ConvexError('Je voorbeeldalbum zit vol.')
     }

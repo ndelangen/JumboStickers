@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
-import { Alert, Button, Group, Modal, SegmentedControl, Stack, Text, TextInput, Title } from '@mantine/core'
-import { ClipboardList, CopyPlus, ListChecks, Search } from 'lucide-react'
+import { Alert, Button, Group, Modal, Stack, Text, Textarea, TextInput, Title } from '@mantine/core'
+import { CopyPlus, Search } from 'lucide-react'
 import { albumSize, catalog, matchesSticker, themes } from '../catalog'
 import { errorMessage, myOffers, parseStickerNumbers, type BulkMark as ApplyBulkMark, type Command, type DemoState, type Update } from '../demo'
 import { AlbumProgress, EmptyState, PageHeading, StatusStamp, StickerDetails } from '../ui'
@@ -10,13 +10,17 @@ const filters = [
   { id: 'double', label: 'Bied ik aan' }, { id: 'owned', label: 'In mijn album' },
 ] as const
 type Filter = (typeof filters)[number]['id']
-type Scope = 'all' | 'empty' | 'numbers'
+const batchActions = {
+  wanted: { title: 'Vul alle nummers in die je nog nodig hebt', confirm: 'Deze nummers heb ik nog allemaal nodig', icon: Search },
+  double: { title: 'Vul alle nummers in die je dubbel hebt', confirm: 'Deze nummers heb ik dubbel', icon: CopyPlus },
+}
+type BatchStatus = keyof typeof batchActions
 
 export function AlbumPage({ state, update, markAlbum }: { state: DemoState; update: Update; markAlbum: ApplyBulkMark }) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [selected, setSelected] = useState<number | null>(null)
-  const [bulkScope, setBulkScope] = useState<Scope | null>(null)
+  const [batchStatus, setBatchStatus] = useState<BatchStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [singleError, setSingleError] = useState<string | null>(null)
@@ -31,13 +35,13 @@ export function AlbumPage({ state, update, markAlbum }: { state: DemoState; upda
   const copies = selected === null ? [] : myOffers(state, selected)
   const canRemove = copies.some((offer) => !offer.promisedTo && offer.interested.length === 0)
 
-  function openBulk(scope: Scope, launcher: HTMLButtonElement) {
+  function openBatch(status: BatchStatus, launcher: HTMLButtonElement) {
     bulkLauncher.current = launcher
-    setBulkScope(scope)
+    setBatchStatus(status)
   }
 
-  function closeBulk() {
-    setBulkScope(null)
+  function closeBatch() {
+    setBatchStatus(null)
     requestAnimationFrame(() => bulkLauncher.current?.focus({ preventScroll: true }))
   }
 
@@ -58,8 +62,12 @@ export function AlbumPage({ state, update, markAlbum }: { state: DemoState; upda
       <PageHeading title="Mijn album" description="Zet op je zoeklijst wat je mist en bied je dubbelen aan."
         side={
           <Group className="album-heading-actions" gap="xs">
-            <Button leftSection={<ListChecks size={19} aria-hidden />} onClick={(event) => openBulk('all', event.currentTarget)}>Alles markeren</Button>
-            <Button variant="light" leftSection={<ClipboardList size={18} aria-hidden />} onClick={(event) => openBulk('numbers', event.currentTarget)}>Meerdere nummers</Button>
+            <Button leftSection={<Search size={19} aria-hidden />} onClick={(event) => openBatch('wanted', event.currentTarget)}>
+              {batchActions.wanted.title}
+            </Button>
+            <Button variant="light" leftSection={<CopyPlus size={18} aria-hidden />} onClick={(event) => openBatch('double', event.currentTarget)}>
+              {batchActions.double.title}
+            </Button>
           </Group>
         } />
       <div className="album-layout">
@@ -159,30 +167,31 @@ export function AlbumPage({ state, update, markAlbum }: { state: DemoState; upda
         )}
       </Modal>
 
-      {bulkScope && (
-        <BulkMark initialScope={bulkScope} markAlbum={markAlbum} onClose={closeBulk} onSaved={(message) => {
+      {batchStatus && (
+        <StickerBatch status={batchStatus} markAlbum={markAlbum} onClose={closeBatch} onSaved={(message) => {
           setFeedback(message)
-          closeBulk()
+          closeBatch()
         }} />
       )}
     </>
   )
 }
 
-function BulkMark({ initialScope, markAlbum, onClose, onSaved }: {
-  initialScope: Scope
+function StickerBatch({ status, markAlbum, onClose, onSaved }: {
+  status: BatchStatus
   markAlbum: ApplyBulkMark
   onClose: () => void
   onSaved: (message: string) => void
 }) {
-  const [scope, setScope] = useState(initialScope)
   const [input, setInput] = useState('')
   const [inputError, setInputError] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const { title, confirm, icon: Icon } = batchActions[status]
 
-  async function mark(status: 'wanted' | 'double' | 'owned') {
-    const selection = scope === 'numbers' ? parseStickerNumbers(input) : scope
+  async function mark() {
+    if (busy) return
+    const selection = parseStickerNumbers(input)
     if (!selection) {
       setInputError(`Gebruik nummers van 1 tot en met ${albumSize}, met komma’s of spaties ertussen.`)
       return
@@ -191,19 +200,14 @@ function BulkMark({ initialScope, markAlbum, onClose, onSaved }: {
     setSubmitError(null)
     try {
       const { changed, protectedCount } = await markAlbum({ scope: selection, status })
-      const total = changed === 1 ? '1 sticker' : `${changed} stickers`
-      let message = scope === 'empty' ? 'Er zijn geen lege vakjes om bij te werken.' : 'Deze stickers stonden al zo.'
-      if (changed) {
-        if (status === 'wanted') message = `${total} op je zoeklijst gezet.`
-        else if (status === 'double') message = changed === 1 ? '1 dubbel toegevoegd aan je aanbod.' : `${changed} dubbelen toegevoegd aan je aanbod.`
-        else message = `${total} afgevinkt in je album.`
+      if (status === 'double') {
+        onSaved(changed === 0 ? 'Deze stickers staan al in je aanbod.' :
+          changed === 1 ? '1 dubbel toegevoegd aan je aanbod.' : `${changed} dubbelen toegevoegd aan je aanbod.`)
+        return
       }
-      if (protectedCount) {
-        const protectedLabel = protectedCount === 1 ? '1 nummer' : `${protectedCount} nummers`
-        const unchanged = changed ? '' : 'Je zoeklijst is gelijk gebleven. '
-        message = `${changed ? message + ' ' : unchanged}${protectedLabel} in je aanbod behouden.`
-      }
-      onSaved(message)
+      const added = changed ? `${changed === 1 ? '1 sticker' : `${changed} stickers`} op je zoeklijst gezet.` : ''
+      const kept = protectedCount ? `${protectedCount === 1 ? '1 sticker blijft' : `${protectedCount} stickers blijven`} in je aanbod.` : ''
+      onSaved([added, kept].filter(Boolean).join(' ') || 'Deze stickers staan al op je zoeklijst.')
     } catch (cause) {
       setSubmitError(errorMessage(cause))
     } finally { setBusy(false) }
@@ -211,34 +215,19 @@ function BulkMark({ initialScope, markAlbum, onClose, onSaved }: {
 
   return (
     <Modal opened centered onClose={() => { if (!busy) onClose() }}
-      title={initialScope === 'numbers' ? 'Meerdere nummers' : 'Alles markeren'}
-      closeButtonProps={{ 'aria-label': 'Sluit stickers markeren', disabled: busy }}>
-      <Stack gap="sm">
-        <Text fw={700}>Welke stickers?</Text>
-        <SegmentedControl fullWidth aria-label="Welke stickers?" value={scope} disabled={busy} onChange={(next) => {
-          setScope(next as Scope)
-          setSubmitError(null)
-        }} data={[
-          { value: 'all', label: `Alle ${albumSize}` },
-          { value: 'empty', label: 'Lege vakjes' },
-          { value: 'numbers', label: 'Losse nummers' },
-        ]} />
-        {scope === 'all' && <Text size="sm" c="dimmed">Dit geldt voor het hele album, ook voor eerder ingevulde vakjes.</Text>}
-        {scope === 'empty' && <Text size="sm" c="dimmed">Je past alleen vakjes aan die je nog niet hebt ingevuld.</Text>}
-        {scope === 'numbers' && (
-          <TextInput label="Stickernummers" placeholder="12, 34, 80" description="Gebruik komma’s of spaties."
-            data-autofocus value={input} error={inputError} disabled={busy}
+      title={title}
+      closeButtonProps={{ 'aria-label': 'Sluit stickernummers', disabled: busy }}>
+      <form onSubmit={(event) => { event.preventDefault(); void mark() }}>
+        <Stack gap="sm">
+          <Textarea label="Stickernummers" placeholder="12, 34, 80" description="Scheid de nummers met komma’s, spaties of nieuwe regels."
+            data-autofocus value={input} error={inputError} disabled={busy} autosize minRows={3} maxRows={7}
             onChange={(event) => { setInput(event.currentTarget.value); setInputError(null); setSubmitError(null) }} />
-        )}
-
-        <Button leftSection={<Search size={20} aria-hidden />} disabled={busy} onClick={() => void mark('wanted')}>Zet op mijn zoeklijst</Button>
-        <Button variant="light" leftSection={<CopyPlus size={20} aria-hidden />} disabled={busy} onClick={() => void mark('double')}>Bied dubbelen aan</Button>
-        <Text size="sm" c="dimmed">
-          {scope === 'numbers' ? 'Je voegt één dubbel toe per ingevuld nummer.' : 'Je zet één dubbel in je aanbod voor elk gekozen nummer dat je nog niet aanbiedt.'}
-        </Text>
-        <Button variant="subtle" size="sm" className="collection-only-action" disabled={busy} onClick={() => void mark('owned')}>Alleen afvinken in mijn album</Button>
-        {submitError && <Alert color="red" role="alert">{submitError}</Alert>}
-      </Stack>
+          {submitError && <Alert color="red" role="alert">{submitError}</Alert>}
+          <Button type="submit" className="batch-confirm" leftSection={<Icon size={20} aria-hidden />} loading={busy} disabled={!input.trim()}>
+            {confirm}
+          </Button>
+        </Stack>
+      </form>
     </Modal>
   )
 }

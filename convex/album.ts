@@ -1,7 +1,11 @@
-import { ConvexError } from 'convex/values'
+import { ConvexError, v } from 'convex/values'
 
 export const albumLength = 175
 export const offerLimit = 400
+export const batchAlbumArgs = {
+  scope: v.array(v.number()),
+  status: v.union(v.literal('wanted'), v.literal('double')),
+}
 
 export function validNumbers(input: number[]) {
   const numbers = [...new Set(input)]

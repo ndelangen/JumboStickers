@@ -46,9 +46,9 @@ export function interestLabel(count: number) {
 }
 
 export function parseStickerNumbers(input: string) {
-  const entries = input.trim().split(/[\s,;]+/u)
+  const entries = input.split(/[\s,;]+/u).filter(Boolean)
   const numbers = entries.map((entry) => /^\d{1,3}$/u.test(entry) ? Number(entry) : NaN)
-  if (numbers.some((number) => !Number.isInteger(number) || number < 1 || number > albumSize)) return null
+  if (!numbers.length || numbers.some((number) => !Number.isInteger(number) || number < 1 || number > albumSize)) return null
   return [...new Set(numbers)]
 }
 
