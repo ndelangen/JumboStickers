@@ -8,9 +8,37 @@ a:focus-visible {
 }
 
 .app-shell {
+  display: flex;
+  flex-direction: column;
   min-height: 100dvh;
-  padding-bottom: 54px;
 }
+
+.app-shell > main { flex: 1; padding-bottom: 48px; }
+
+.site-footer {
+  border-top: 1px solid var(--album-border);
+  background: var(--album-white);
+  color: var(--album-ink);
+}
+
+.site-footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 28px;
+  padding-block: 14px;
+}
+
+.site-footer nav { display: flex; flex-wrap: wrap; gap: 2px 20px; }
+.site-footer a { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; font-size: .92rem; }
+.site-footer a[aria-current='page'] { font-weight: 700; text-decoration: underline; }
+.policy { max-width: 68ch; margin-inline: auto; }
+.policy-section { display: grid; gap: 8px; padding-block: 17px; border-top: 1px solid var(--album-border); }
+.policy-section h2 { font-size: 1.28rem; }
+.policy-section ul { margin: 0; padding-inline-start: 1.25rem; }
+.policy-section li + li { margin-top: 5px; }
+.policy-section a { overflow-wrap: anywhere; }
 
 .site-width {
   width: min(1200px, 100% - 64px);

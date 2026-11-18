@@ -23,4 +23,6 @@ Stel op de Convex-testdeployment `DESCOPE_PROJECT_ID` en `DESCOPE_API_URL` in. G
 
 Via Instellingen kun je je Stickerruil-profiel en ruilgegevens wissen. De app wist ook de chatgeschiedenis in deze browser en logt je uit. Descope bewaart de inlogidentiteit, zodat je later opnieuw kunt inloggen en met een leeg album kunt beginnen.
 
+Stel voor de privacyverklaring bij de productiebuild `VITE_PRIVACY_CONTROLLER_NAME` en `VITE_PRIVACY_CONTACT_EMAIL` in. De naam en het contactadres zijn zichtbaar voor bezoekers.
+
 De [foto van Zwolle](https://commons.wikimedia.org/wiki/File:Zwolle_Centrum.jpg) is van Deerpeter en valt onder [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
