@@ -20,7 +20,7 @@ function openHistory(key: string): Promise<IDBDatabase> {
     }
     request.onblocked = () => {
       blocked = true
-      reject(new Error('Chatgeschiedenis is nog in gebruik.'))
+      reject(new Error('The chat history database is still in use.'))
     }
     request.onsuccess = () => {
       const database = request.result
@@ -58,7 +58,7 @@ async function readOrWrite<T>(key: string, mode: IDBTransactionMode,
         request = operation(messages, status)
       }
       transaction.oncomplete = () => resolve(request.result)
-      transaction.onabort = () => reject(transaction.error ?? new Error('Deze chatgeschiedenis is gesloten.'))
+      transaction.onabort = () => reject(transaction.error ?? new Error('The chat history transaction was aborted.'))
       transaction.onerror = () => reject(transaction.error)
     })
   } finally {

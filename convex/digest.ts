@@ -258,13 +258,13 @@ export const deliverPage = internalAction({
         const message = await ctx.runMutation(internal.digest.reserve, { subscription, round, offers: [...offers.values()] })
         if (!message) continue
         const intro = 'Voor deze stickers die je zoekt is een exemplaar vrij waar nog niemand om heeft gevraagd.'
-        const afmelden = `${config.site}${unsubscribePath}#${message.unsubscribeToken}`
+        const unsubscribeUrl = `${config.site}${unsubscribePath}#${message.unsubscribeToken}`
         const links = message.numbers.sort((a, b) => a - b).map((number) => ({
           label: `Sticker ${number}`,
           href: `${config.site}/ruilen?sticker=${number}#aanbod`,
         }))
-        const body = [intro, '', ...links.map(({ label, href }) => `${label}: ${href}`), '', `Afmelden voor ruilmails: ${afmelden}`].join('\n')
-        const htmlBody = `<p>${intro}</p><ul>${links.map(({ label, href }) => `<li><a href="${href}">${label}</a></li>`).join('')}</ul><p><a href="${afmelden}">Afmelden voor ruilmails</a></p>`
+        const body = [intro, '', ...links.map(({ label, href }) => `${label}: ${href}`), '', `Afmelden voor ruilmails: ${unsubscribeUrl}`].join('\n')
+        const htmlBody = `<p>${intro}</p><ul>${links.map(({ label, href }) => `<li><a href="${href}">${label}</a></li>`).join('')}</ul><p><a href="${unsubscribeUrl}">Afmelden voor ruilmails</a></p>`
         const response = await fetch(config.url, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ secret: config.secret, id: message.id, recipient: message.email, subject: 'Nieuwe ruilkansen in Zwolle', body, htmlBody }),
@@ -274,7 +274,7 @@ export const deliverPage = internalAction({
         const result = await response.json() as { status?: string }
         if (result.status === 'quota' || result.status === 'denied') {
           await ctx.runMutation(internal.digest.release, { notices: message.notices })
-          if (result.status === 'denied') console.error('De ruilmaildienst weigerde de aanvraag.')
+          if (result.status === 'denied') console.error('The trade email service rejected the request.')
           await ctx.runMutation(internal.digest.advance, { round, previous: page.previous, cursor: page.cursor, done: true })
           return null
         }
@@ -283,7 +283,7 @@ export const deliverPage = internalAction({
         }
       } catch {
         // MailApp has no delivery lookup. Keep reservations when the outcome is unknown.
-        console.error('De ruilmail kon niet worden verwerkt of bevestigd.')
+        console.error('Could not process the trade email or confirm it was sent.')
       }
     }
     await ctx.runMutation(internal.digest.advance, { round, previous: page.previous, cursor: page.cursor, done: page.done })

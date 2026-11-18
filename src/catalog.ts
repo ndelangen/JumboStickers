@@ -11,7 +11,7 @@ type Sticker = {
   section: string
 }
 
-// De eindnummers per onderdeel komen uit het spaaroverzicht op pagina 70.
+// The last sticker number in each section comes from the checklist on page 70.
 const sections: readonly (readonly [last: number, theme: Theme, title: string])[] = [
   [4, 'Inleiding', 'Wat houdt Zwolle bij elkaar?'],
   [10, 'Inleiding', 'Dit is waar je Zwolle waarschijnlijk van kent'],
@@ -46,7 +46,7 @@ const sections: readonly (readonly [last: number, theme: Theme, title: string])[
 
 export const catalog = catalogData.map(([number, page, title]): Sticker => {
   const section = sections.find(([last]) => number <= last)
-  if (!section) throw new Error(`Sticker ${number} heeft geen onderdeel.`)
+  if (!section) throw new Error(`Sticker ${number} has no section.`)
   return { number, page, title, theme: section[1], section: section[2] }
 })
 

@@ -1,11 +1,11 @@
 import type { District } from '../convex/districts'
 
-// Buurtgrenzen (RD New): https://gisservices.zwolle.nl/arcgis/rest/services/Grenzen/FeatureServer/3
-// Vereenvoudigd en gegroepeerd volgens de wijknamen op zwolle.nl/wijken.
-// Buurten 136, 140 en 141 staan apart. Buurt 405 telt bij Haerst-Tolhuislanden.
-// Poort van Zwolle heet hier Spoolde, Vechtlanden valt bij Haerst-Tolhuislanden,
-// Marsweteringlanden bij Wijthmen en Soestweteringlanden bij Windesheim.
-// Schelle en Ittersum zijn samengevoegd tot Zwolle-Zuid.
+// Neighborhood boundaries in RD New coordinates: https://gisservices.zwolle.nl/arcgis/rest/services/Grenzen/FeatureServer/3
+// The boundaries are simplified and grouped by the district names at zwolle.nl/wijken.
+// Neighborhoods 136, 140, and 141 are shown separately. Neighborhood 405 is part of Haerst-Tolhuislanden.
+// The map labels Poort van Zwolle as Spoolde and groups Vechtlanden with Haerst-Tolhuislanden,
+// Marsweteringlanden with Wijthmen, and Soestweteringlanden with Windesheim.
+// The map combines Schelle and Ittersum into Zwolle-Zuid.
 export const zwolleDistrictMap = {
   "Aa-landen": {path: "M255.6,202.8 258.6,210.8 232.3,216.5 220.8,221.1 216.3,212.5 214.3,199.2 210.8,192.5 197.5,186.3 199.7,181.3 206.8,175.8 207.1,172.6 212.3,171 215.3,171.5 214.5,168.6 216.8,162.6 243.5,165 245.9,170.2 250.3,172.6 252.2,179.2 253.8,179.4 254,189.1 255.8,189.9 254.2,198.3 249,198.6Z", anchor: [231.5, 186.1]},
   "Assendorp": {path: "M274.7,279.9 278.6,288.8 274,292.2 265.2,295.1 249.2,295.6 238.5,291.6 196.3,266.4 200.4,263.2 201.8,258.2 208.3,259.1 211.5,264.3 217.1,261.9 223,263.3 223.9,259.4 227.7,257.6 227.5,253.2 230.3,250.2 243.1,258.5 249.2,264.5 255.8,266.6 261.6,270.8 268.8,272.9ZM244.8,277 245.2,277.2 244.5,276.8Z", anchor: [232.1, 272.6]},

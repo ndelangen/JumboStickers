@@ -1,29 +1,28 @@
 # Stickerruil Zwolle
 
-Een ruiltool voor het stickeralbum *Zwolle: De Stad Ontrafeld*.
+A trading tool for the sticker album *Zwolle: De Stad Ontrafeld*.
 
-## Lokaal uitproberen
+## Run locally
 
-Installeer de pakketten met `npm ci`. Start daarna twee terminals in deze map:
+Install the dependencies with `npm ci`. Then run these commands in separate terminals from this directory:
 
-- `npm run dev:convex` start een lokale Convex-server zonder account.
-- `npm run dev` start de webapp. Open het adres dat Vite toont.
+- `npm run dev:convex` starts a local Convex server without an account.
+- `npm run dev` starts the web app. Open the URL printed by Vite.
 
-Het album bevat de 175 stickers uit het boek. Klik op **Ik wil ook stickers ruilen** en kies **Open Noor** en **Open Sam** om met twee proefaccounts te ruilen. Convex deelt hun aanbod, interesses en beloftes tussen de tabbladen. De losse demo werkt met voorbeeldgesprekken en bewaart wat je zelf typt alleen in de browser.
+The album contains all 175 stickers from the book. Click **Ik wil ook stickers ruilen**, then **Open Noor** and **Open Sam** to trade between two test accounts. Convex shares their offers, expressions of interest, and reservations across tabs. The standalone demo has sample conversations and stores the messages you type in your browser.
 
-Tussen proefaccounts bewaart Convex de berichttekst tot het bericht zichtbaar is in de chat van de ontvanger en diens browser het heeft opgeslagen. De gespreksgeschiedenis staat per account in de browser. Voor productie moet de inbox na herstel worden opgeschoond voordat de chat weer opengaat.
+For the test accounts, Convex keeps each message until the recipient sees it in the chat and their browser saves a copy. Each account's chat history stays in the browser. After restoring a production backup, clear the unread-message queue before reopening chat.
 
-In de losse demo zijn inloglinks en ruilmails voorbeelden. Gebruik verzonnen gegevens.
+In the standalone demo, sign-in links and trade emails are simulated. Use fictional details.
 
-`npm run build` controleert TypeScript en bouwt de webapp.
+`npm run build` checks the frontend TypeScript and builds the web app.
 
-## Testen met echte inlogmail
+## Test with real sign-in emails
 
-Stel op de Convex-testdeployment `DESCOPE_PROJECT_ID` en `DESCOPE_API_URL` in. Gebruik in de frontend `VITE_CONVEX_URL`, `VITE_DESCOPE_PROJECT_ID`, `VITE_DESCOPE_API_URL` en `VITE_DESCOPE_FLOW_ID`. De flow `stickerruil-inloggen` heeft scanbescherming, een geldigheid van vijf minuten en stuurt via Descope (`noreply@descope.io`). De terugkeerpagina is `/inloggen`.
+Set `DESCOPE_PROJECT_ID` and `DESCOPE_API_URL` on the Convex test deployment. For the frontend, set `VITE_CONVEX_URL`, `VITE_DESCOPE_PROJECT_ID`, `VITE_DESCOPE_API_URL`, and `VITE_DESCOPE_FLOW_ID`. The `stickerruil-inloggen` flow sends links through Descope from `noreply@descope.io`. The links expire after five minutes and have protection against email scanners. The return path is `/inloggen`.
 
-Via Instellingen kun je je Stickerruil-profiel en ruilgegevens wissen. De app wist ook de chatgeschiedenis in deze browser en logt je uit. Descope bewaart de inlogidentiteit, zodat je later opnieuw kunt inloggen en met een leeg album kunt beginnen.
+Users can delete their profile and trade data in **Instellingen** (Settings). The app also clears their chat history in the current browser and signs them out. Descope retains their sign-in identity so they can sign in again and start with an empty album.
 
-Stel voor de privacyverklaring bij de productiebuild `VITE_PRIVACY_CONTROLLER_NAME` en `VITE_PRIVACY_CONTACT_EMAIL` in. De naam en het contactadres zijn zichtbaar voor bezoekers.
+Set `VITE_PRIVACY_CONTROLLER_NAME` and `VITE_PRIVACY_CONTACT_EMAIL` in the production build. The privacy notice displays both values to visitors.
 
-De [foto van Zwolle](https://commons.wikimedia.org/wiki/File:Zwolle_Centrum.jpg) is van Deerpeter en valt onder [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
-De deelkaart gebruikt een uitsnede van die foto en wordt onder dezelfde licentie gedeeld.
+The [photo of Zwolle](https://commons.wikimedia.org/wiki/File:Zwolle_Centrum.jpg) is by Deerpeter and is licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The social preview uses a crop of the photo under the same license.
