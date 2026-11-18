@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react'
-import { Alert, Button, Group, Modal, SegmentedControl, Stack, Text, TextInput } from '@mantine/core'
+import { Alert, Button, Group, Modal, SegmentedControl, Stack, Text, TextInput, Title } from '@mantine/core'
 import { ClipboardList, CopyPlus, ListChecks, Search } from 'lucide-react'
-import { albumSize, catalog, errorMessage, myOffers, parseStickerNumbers, themeFor, type BulkMark as ApplyBulkMark, type Command, type DemoState, type Update } from '../demo'
-import { AlbumProgress, EmptyState, PageHeading, StatusStamp } from '../ui'
+import { albumSize, catalog, matchesSticker, themes } from '../catalog'
+import { errorMessage, myOffers, parseStickerNumbers, type BulkMark as ApplyBulkMark, type Command, type DemoState, type Update } from '../demo'
+import { AlbumProgress, EmptyState, PageHeading, StatusStamp, StickerDetails } from '../ui'
 
 const filters = [
   { id: 'all', label: 'Alle stickers' }, { id: 'wanted', label: 'Zoek ik' },
@@ -24,8 +25,9 @@ export function AlbumPage({ state, update, markAlbum }: { state: DemoState; upda
   const searchField = useRef<HTMLInputElement | null>(null)
   const doubleCounts = new Map<number, number>()
   for (const offer of myOffers(state)) doubleCounts.set(offer.number, (doubleCounts.get(offer.number) ?? 0) + 1)
-  const numbers = catalog.filter((number) => String(number).includes(search.trim()) &&
-    (filter === 'all' || (filter === 'double' ? doubleCounts.has(number) : state.album[number] === filter)))
+  const showTitles = !!search.trim()
+  const stickers = catalog.filter((sticker) => matchesSticker(sticker, search) &&
+    (filter === 'all' || (filter === 'double' ? doubleCounts.has(sticker.number) : state.album[sticker.number] === filter)))
   const copies = selected === null ? [] : myOffers(state, selected)
   const canRemove = copies.some((offer) => !offer.promisedTo && offer.interested.length === 0)
 
@@ -62,8 +64,8 @@ export function AlbumPage({ state, update, markAlbum }: { state: DemoState; upda
         } />
       <div className="album-layout">
         <div className="album-toolbar">
-          <TextInput ref={searchField} aria-label="Zoek in je album op stickernummer" placeholder="Zoek op stickernummer"
-            leftSection={<Search size={18} aria-hidden />} inputMode="numeric" value={search}
+          <TextInput ref={searchField} aria-label="Zoek in je album op nummer of naam" placeholder="Zoek op nummer of naam"
+            leftSection={<Search size={18} aria-hidden />} value={search}
             onChange={(event) => setSearch(event.currentTarget.value)} />
           <div className="filter-buttons" role="group" aria-label="Filter je album">
             {filters.map(({ id, label }) => (
@@ -80,26 +82,33 @@ export function AlbumPage({ state, update, markAlbum }: { state: DemoState; upda
         </aside>
         <section className="album-list" aria-label="Stickerlijst">
           <Text className="album-feedback" size="sm" role="status" c="dimmed">{feedback}</Text>
-          {numbers.length ? (
-            <div className="album-grid">
-              {numbers.map((number) => {
-                const count = doubleCounts.get(number) ?? 0
-                const status = count ? 'double' : state.album[number] ?? 'unset'
-                const badge = status === 'double' ? `${count} in aanbod` : status === 'owned' ? 'In album' : status === 'wanted' ? 'Zoek ik' : ''
-                return (
-                  <button key={number} type="button" className="album-cell" data-status={status}
-                    aria-label={`Sticker ${number}, ${badge || 'nog niet ingevuld'}`} onClick={(event) => {
-                      selectedTile.current = event.currentTarget
-                      setSingleError(null)
-                      setSelected(number)
-                    }}>
-                    <strong>{number}</strong>
-                    {badge && <span key={badge} className="cell-state">{count ? `${count} dubbel` : badge}</span>}
-                  </button>
-                )
-              })}
-            </div>
-          ) : <EmptyState title="Geen stickers gevonden">Probeer een ander nummer of kies ‘Alle stickers’.</EmptyState>}
+          {stickers.length ? themes.map((theme) => {
+            const group = stickers.filter((sticker) => sticker.theme === theme)
+            return group.length > 0 && (
+              <section className="album-theme" key={theme} aria-label={theme}>
+                <Title order={2}>{theme}</Title>
+                <div className="album-grid" data-results={showTitles || undefined}>
+                  {group.map(({ number, title }) => {
+                    const count = doubleCounts.get(number) ?? 0
+                    const status = count ? 'double' : state.album[number] ?? 'unset'
+                    const badge = status === 'double' ? `${count} in aanbod` : status === 'owned' ? 'In album' : status === 'wanted' ? 'Zoek ik' : ''
+                    return (
+                      <button key={number} type="button" className="album-cell" data-status={status}
+                        aria-label={`Sticker ${number}, ${title}, ${badge || 'nog niet ingevuld'}`} onClick={(event) => {
+                          selectedTile.current = event.currentTarget
+                          setSingleError(null)
+                          setSelected(number)
+                        }}>
+                        <strong>{number}</strong>
+                        {showTitles && <span className="cell-title">{title}</span>}
+                        {badge && <span key={badge} className="cell-state">{count ? `${count} dubbel` : badge}</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
+            )
+          }) : <EmptyState title="Geen stickers gevonden">Probeer een ander nummer, een andere naam of kies ‘Alle stickers’.</EmptyState>}
         </section>
       </div>
 
@@ -110,17 +119,13 @@ export function AlbumPage({ state, update, markAlbum }: { state: DemoState; upda
         title={selected === null ? '' : `Sticker ${selected}`} closeButtonProps={{ 'aria-label': 'Sluit sticker', disabled: busy }}>
         {selected !== null && (
           <Stack gap="sm">
-            {(themeFor(selected) || copies.length > 0 || state.album[selected]) && (
-              <Group gap="xs">
-                {themeFor(selected) && <Text c="dimmed">{themeFor(selected)}</Text>}
-                {copies.length ? <StatusStamp>{copies.length} in je aanbod</StatusStamp>
-                  : state.album[selected] && (
-                    <StatusStamp color={state.album[selected] === 'wanted' ? 'ochre' : 'gray'}>
-                      {state.album[selected] === 'wanted' ? 'Op je zoeklijst' : 'In je album'}
-                    </StatusStamp>
-                  )}
-              </Group>
-            )}
+            <StickerDetails number={selected} />
+            {copies.length ? <Group><StatusStamp>{copies.length} in je aanbod</StatusStamp></Group>
+              : state.album[selected] && (
+                <Group><StatusStamp color={state.album[selected] === 'wanted' ? 'ochre' : 'gray'}>
+                  {state.album[selected] === 'wanted' ? 'Op je zoeklijst' : 'In je album'}
+                </StatusStamp></Group>
+              )}
 
             <Button fullWidth leftSection={<CopyPlus size={21} aria-hidden />} disabled={busy}
               onClick={() => void save({ type: 'album', numbers: [selected], status: 'double' }, `Sticker ${selected} staat in je aanbod.`)}>
