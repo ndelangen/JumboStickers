@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Accordion, Anchor, Avatar, Button, Group, Modal, Paper, Stack, Text, Textarea, Title } from '@mantine/core'
-import { ArrowLeft, ArrowUpRight, Ban, Send, Sticker as StickerIcon } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, Ban, Send, Sticker as StickerIcon, Trash2 } from 'lucide-react'
 import { useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
-import { localHistory, saveLocalMessage, watchLocalHistory, type LocalMessage } from '../chatStorage'
+import { localHistory, removeThreadWithHistory, saveLocalMessage, watchLocalHistory, type LocalMessage } from '../chatStorage'
 import { errorMessage, personFor, type DemoState, type SendMessage, type Thread, type Update } from '../demo'
 import { EmptyState, PageHeading, StatusStamp } from '../ui'
 
-export function MessagesPage({ state, threadId, demoKey, update, sendMessage }: {
+export function MessagesPage({ state, threadId, demoKey, update, sendMessage, navigate }: {
   state: DemoState
   threadId?: string
   demoKey: string
   update: Update
   sendMessage?: SendMessage
+  navigate: (path: string) => void
 }) {
+  const [removal, setRemoval] = useState<{ thread: Thread, name: string, removed: boolean } | null>(null)
+  const [removing, setRemoving] = useState(false)
+  const [removalError, setRemovalError] = useState('')
   const selected = useQuery(api.exchange.getConversation, sendMessage && threadId ? { threadId } : 'skip')
   const setMessageBlock = useMutation(api.exchange.setMessageBlock)
   const messaging = selected ? {
@@ -25,6 +29,32 @@ export function MessagesPage({ state, threadId, demoKey, update, sendMessage }: 
   const active = listed ?? older
   const threads = older ? [...state.threads, older] : state.threads
   const viewState = older ? { ...state, people: { ...state.people, [older.person]: { name: older.name, wants: [] } } } : state
+
+  async function removeConversation() {
+    if (!removal || removing) return
+    const { thread } = removal
+    const historyVersion = thread.historyVersion ?? 0
+    let removed = removal.removed
+    setRemoving(true)
+    setRemovalError('')
+    try {
+      await removeThreadWithHistory(demoKey, thread.id, historyVersion, async (threadId, version) => {
+        if (!removed) await update({ type: 'removeThread', threadId, historyVersion: version }, { inlineError: true })
+      }, () => {
+        removed = true
+        setRemoval({ ...removal, removed: true })
+      })
+      setRemoval(null)
+      if (location.pathname.replace(/\/$/u, '') === `/berichten/${thread.id}`) navigate('/berichten')
+    } catch (cause) {
+      setRemovalError(removed
+        ? 'Het gesprek is uit je lijst. De chatgeschiedenis in deze browser wissen is nog niet gelukt.'
+        : errorMessage(cause))
+    } finally {
+      setRemoving(false)
+    }
+  }
+
   return (
     <>
       <PageHeading title="Berichten" description="Spreek samen af waar je de stickers ruilt." />
@@ -45,7 +75,12 @@ export function MessagesPage({ state, threadId, demoKey, update, sendMessage }: 
             })}
           </Paper>
           {active ? (
-            <Conversation key={active.id} state={viewState} thread={active} demoKey={demoKey} update={update} sendMessage={sendMessage} messaging={messaging} />
+            <Conversation key={`${active.id}:${active.historyVersion ?? 0}`} state={viewState} thread={active} demoKey={demoKey}
+              update={update} sendMessage={sendMessage} messaging={messaging} removing={removal !== null}
+              requestRemoval={() => {
+                setRemovalError('')
+                setRemoval({ thread: active, name: personFor(active.person, viewState).name, removed: false })
+              }} />
           ) : sendMessage && threadId && selected === undefined ? (
             <Text role="status">Gesprek laden…</Text>
           ) : (
@@ -59,6 +94,23 @@ export function MessagesPage({ state, threadId, demoKey, update, sendMessage }: 
           Kies een sticker die je wilt hebben om een privégesprek te starten.
         </EmptyState>
       )}
+      <Modal opened={removal !== null} onClose={() => { if (!removing) setRemoval(null) }}
+        closeOnEscape={!removing} closeOnClickOutside={!removing} withCloseButton={!removing}
+        centered title="Gesprek verwijderen?">
+        {removal && <Stack>
+          <Text>Het gesprek met {removal.name} over sticker {removal.thread.number} verdwijnt uit je lijst. Je chatgeschiedenis voor dit gesprek wordt in deze browser gewist.</Text>
+          {sendMessage && <Text>De ander houdt het gesprek. Bij een nieuw bericht verschijnt het weer in je lijst.</Text>}
+          {removalError && <Text role="alert" c="red">{removalError}</Text>}
+          <Group justify="flex-end">
+            <Button variant="default" data-autofocus disabled={removing} onClick={() => setRemoval(null)}>
+              {removal.removed ? 'Sluiten' : 'Annuleren'}
+            </Button>
+            <Button color="red" loading={removing} onClick={() => void removeConversation()}>
+              {removalError ? 'Opnieuw proberen' : 'Verwijderen'}
+            </Button>
+          </Group>
+        </Stack>}
+      </Modal>
       <Accordion className="chat-privacy" variant="contained">
         <Accordion.Item value="privacy">
           <Accordion.Control>Tijdelijke opslag van chatberichten</Accordion.Control>
@@ -79,12 +131,14 @@ export function MessagesPage({ state, threadId, demoKey, update, sendMessage }: 
   )
 }
 
-function Conversation({ state, thread, demoKey, update, sendMessage, messaging }: {
+function Conversation({ state, thread, demoKey, update, sendMessage, messaging, removing, requestRemoval }: {
   state: DemoState
   thread: Thread
   demoKey: string
   update: Update
   sendMessage?: SendMessage
+  removing: boolean
+  requestRemoval: () => void
   messaging?: { blocked: boolean, setBlocked: (blocked: boolean) => Promise<null> }
 }) {
   const [confirmBlock, setConfirmBlock] = useState(false)
@@ -96,13 +150,15 @@ function Conversation({ state, thread, demoKey, update, sendMessage, messaging }
   const [exampleBusy, setExampleBusy] = useState(false)
   const [withdrawing, setWithdrawing] = useState(false)
   const [feedback, setFeedback] = useState('')
-  const pauseReading = confirmBlock || savingBlock || !!messaging?.blocked
+  const pauseReading = removing || confirmBlock || savingBlock || !!messaging?.blocked
   const scroller = useRef<HTMLDivElement>(null)
   const person = personFor(thread.person, state)
-  const pending = useMemo(() => state.inbox.filter((message) => message.threadId === thread.id), [state.inbox, thread.id])
+  const pending = useMemo(() => state.inbox.filter((message) =>
+    message.threadId === thread.id && message.historyVersion === thread.historyVersion), [state.inbox, thread.id, thread.historyVersion])
   const offer = state.offers.find((candidate) => candidate.id === thread.offerId)
   const canWithdraw = offer?.interested.includes('me') && offer.promisedTo !== 'me'
-  const messages = new Map(local.filter((message) => message.threadId === thread.id).map((message) => [message.id, message]))
+  const messages = new Map(local.filter((message) => message.threadId === thread.id &&
+    message.historyVersion === thread.historyVersion).map((message) => [message.id, message]))
   for (const message of pending) messages.set(message.id, { ...message, direction: 'in' })
   const sorted = [...messages.values()].sort((first, second) => first.sentAt - second.sentAt)
 
@@ -177,9 +233,9 @@ function Conversation({ state, thread, demoKey, update, sendMessage, messaging }
 
   async function send() {
     const text = draft.trim()
-    if (!text || sending || messaging?.blocked) return
+    if (!text || sending || removing || messaging?.blocked) return
     const message: LocalMessage = {
-      id: crypto.randomUUID(), threadId: thread.id, direction: 'out', text, sentAt: Date.now(),
+      id: crypto.randomUUID(), threadId: thread.id, historyVersion: thread.historyVersion, direction: 'out', text, sentAt: Date.now(),
       ...(sendMessage ? { delivery: 'pending' } : {}),
     }
     setSending(message.id)
@@ -201,7 +257,10 @@ function Conversation({ state, thread, demoKey, update, sendMessage, messaging }
   async function deliverMessage(message: LocalMessage) {
     if (!sendMessage) return
     try {
-      await sendMessage({ threadId: thread.id, clientId: message.id, text: message.text, composedAt: message.sentAt })
+      await sendMessage({
+        threadId: thread.id, clientId: message.id, text: message.text,
+        composedAt: message.sentAt, historyVersion: message.historyVersion,
+      })
     } catch (cause) {
       setError(errorMessage(cause))
       return
@@ -214,7 +273,7 @@ function Conversation({ state, thread, demoKey, update, sendMessage, messaging }
   }
 
   async function retry(message: LocalMessage) {
-    if (sending) return
+    if (sending || removing) return
     setSending(message.id)
     setError('')
     try { await deliverMessage(message) } finally { setSending(null) }
@@ -252,6 +311,8 @@ function Conversation({ state, thread, demoKey, update, sendMessage, messaging }
               <Button size="compact-sm" variant="subtle" color="red" leftSection={<Ban size={15} aria-hidden />}
                 onClick={() => setConfirmBlock(true)}>Blokkeren</Button>
             ))}
+            <Button size="compact-sm" variant="subtle" color="red" leftSection={<Trash2 size={15} aria-hidden />}
+              disabled={!!sending || savingBlock} onClick={requestRemoval}>Verwijderen</Button>
           </Group>
         </Group>
       </header>

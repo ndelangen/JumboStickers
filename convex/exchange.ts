@@ -31,12 +31,19 @@ async function ownOffers(ctx: QueryCtx | MutationCtx, owner: Id<'collectors'>) {
   return await ctx.db.query('offers').withIndex('by_owner', (q) => q.eq('owner', owner)).take(offerLimit)
 }
 
+function threadFields(thread: Doc<'conversations'>, viewer: Id<'collectors'>) {
+  return thread.owner === viewer
+    ? { hidden: 'ownerHidden', version: 'ownerHistoryVersion', visibleSince: 'ownerVisibleSince' } as const
+    : { hidden: 'requesterHidden', version: 'requesterHistoryVersion', visibleSince: 'requesterVisibleSince' } as const
+}
+
 function threadView(thread: Doc<'conversations'>, viewer: Id<'collectors'>) {
   return {
     id: thread._id,
     offerId: thread.offer,
     number: thread.number,
     person: thread.owner === viewer ? thread.requester : thread.owner,
+    historyVersion: thread[threadFields(thread, viewer).version],
   }
 }
 
@@ -54,8 +61,10 @@ export const get = query({
         q.eq('status', 'available').eq('number', sticker)).take(50),
       ctx.db.query('interests').withIndex('by_collector', (q) => q.eq('collector', me._id)).take(localNetworkLimit),
       ctx.db.query('interests').withIndex('by_owner', (q) => q.eq('owner', me._id)).take(localNetworkLimit),
-      ctx.db.query('conversations').withIndex('by_requester', (q) => q.eq('requester', me._id)).order('desc').take(localNetworkLimit),
-      ctx.db.query('conversations').withIndex('by_owner', (q) => q.eq('owner', me._id)).order('desc').take(localNetworkLimit),
+      ctx.db.query('conversations').withIndex('by_requester_and_requesterHidden_and_requesterVisibleSince',
+        (q) => q.eq('requester', me._id).eq('requesterHidden', undefined)).order('desc').take(localNetworkLimit),
+      ctx.db.query('conversations').withIndex('by_owner_and_ownerHidden_and_ownerVisibleSince',
+        (q) => q.eq('owner', me._id).eq('ownerHidden', undefined)).order('desc').take(localNetworkLimit),
       ctx.db.query('unreadMessages').withIndex('by_recipient', (q) => q.eq('recipient', me._id)).take(inboxLimit),
     ])
     const available = [...general, ...linked]
@@ -73,9 +82,12 @@ export const get = query({
     const threadMap = new Map([...opened, ...received].map((thread) => [thread._id, thread]))
     const olderUnread = [...new Set(inbox.map((message) => message.conversation))].filter((id) => !threadMap.has(id))
     for (const thread of await Promise.all(olderUnread.map((id) => ctx.db.get('conversations', id)))) {
-      if (thread && (thread.owner === me._id || thread.requester === me._id)) threadMap.set(thread._id, thread)
+      if (thread && (thread.owner === me._id || thread.requester === me._id) && !thread[threadFields(thread, me._id).hidden]) {
+        threadMap.set(thread._id, thread)
+      }
     }
-    const candidates = [...threadMap.values()].sort((a, b) => b._creationTime - a._creationTime).map((thread) => threadView(thread, me._id))
+    const visibleSince = (thread: Doc<'conversations'>) => thread[threadFields(thread, me._id).visibleSince] ?? thread._creationTime
+    const candidates = [...threadMap.values()].sort((a, b) => visibleSince(b) - visibleSince(a)).map((thread) => threadView(thread, me._id))
 
     const ownAvailableNumbers = new Set(mine.filter((offer) => offer.status === 'available').map((offer) => offer.number))
     const offerOwners = new Set([...offers.values()].map((offer) => offer.owner))
@@ -90,7 +102,7 @@ export const get = query({
       .filter((profile): profile is Doc<'collectors'> => !!profile && !profile.deleting)
     const active = new Set(profiles.map((profile) => profile._id))
     const threads = candidates.filter((thread) => active.has(thread.person))
-    const threadIds = new Set(threads.map((thread) => thread.id))
+    const threadVersions = new Map(threads.map((thread) => [thread.id, thread.historyVersion]))
     return {
       collectorId: me._id,
       displayName: me.displayName,
@@ -117,8 +129,10 @@ export const get = query({
           offer.status === 'promised' ? 'reserved' : null,
       })),
       threads,
-      inbox: inbox.filter((message) => threadIds.has(message.conversation))
-        .map((message) => ({ id: message._id, threadId: message.conversation, text: message.text, sentAt: message._creationTime })),
+      inbox: inbox.filter((message) => threadVersions.has(message.conversation)).map((message) => ({
+        id: message._id, threadId: message.conversation, text: message.text, sentAt: message._creationTime,
+        historyVersion: threadVersions.get(message.conversation),
+      })),
     }
   },
 })
@@ -149,13 +163,14 @@ async function messagesFrom(ctx: MutationCtx, recipient: Id<'collectors'>, sende
 export const getConversation = query({
   args: { threadId: v.string() },
   returns: v.union(v.null(), v.object({
-    id: v.id('conversations'), offerId: v.id('offers'), number: v.number(), person: v.id('collectors'), name: v.string(), blocked: v.boolean(),
+    id: v.id('conversations'), offerId: v.id('offers'), number: v.number(), person: v.id('collectors'), name: v.string(), blocked: v.boolean(), historyVersion: v.optional(v.number()),
   })),
   handler: async (ctx, { threadId }) => {
     const me = await currentCollector(ctx)
     const id = ctx.db.normalizeId('conversations', threadId)
     const thread = id && await ctx.db.get('conversations', id)
     if (!me || !thread || (thread.owner !== me._id && thread.requester !== me._id)) return null
+    if (thread[threadFields(thread, me._id).hidden]) return null
     const view = threadView(thread, me._id)
     const person = await ctx.db.get('collectors', view.person)
     if (!person || person.deleting) return null
@@ -198,12 +213,25 @@ export const markAlbum = mutation({
   handler: async (ctx, { scope, status }) => markNumbers(ctx, await requireCollector(ctx), scope, status, 'batch'),
 })
 
-async function conversationFor(ctx: MutationCtx, offer: Doc<'offers'>, requester: Id<'collectors'>) {
+async function conversationFor(ctx: MutationCtx, offer: Doc<'offers'>, requester: Id<'collectors'>, viewer: Id<'collectors'>) {
   const existing = await ctx.db.query('conversations').withIndex('by_offer_and_requester',
     (q) => q.eq('offer', offer._id).eq('requester', requester)).unique()
-  return existing?._id ?? await ctx.db.insert('conversations', {
+  if (existing) {
+    await showConversation(ctx, existing, viewer)
+    return existing._id
+  }
+  const now = Date.now()
+  return await ctx.db.insert('conversations', {
     offer: offer._id, number: offer.number, owner: offer.owner, requester,
+    ownerVisibleSince: now, requesterVisibleSince: now,
   })
+}
+
+async function showConversation(ctx: MutationCtx, thread: Doc<'conversations'>, viewer: Id<'collectors'>) {
+  const { hidden, visibleSince } = threadFields(thread, viewer)
+  if (thread[hidden]) {
+    await ctx.db.patch('conversations', thread._id, { [hidden]: undefined, [visibleSince]: Date.now() })
+  }
 }
 
 async function interestFor(ctx: MutationCtx, offer: Id<'offers'>, collector: Id<'collectors'>) {
@@ -229,6 +257,24 @@ export const update = mutation({
         ...(command.district === undefined ? {} : { district: command.district ?? undefined }),
         ...(command.searchDistricts === undefined ? {} : { searchDistricts: uniqueDistricts(command.searchDistricts) }),
       })
+      return null
+    }
+    if (command.type === 'removeThread') {
+      const thread = await ctx.db.get('conversations', idFor(ctx, 'conversations', command.threadId))
+      if (!thread) return null
+      if (thread.owner !== me._id && thread.requester !== me._id) {
+        throw new ConvexError('Dit gesprek is niet beschikbaar.')
+      }
+      const { hidden, version } = threadFields(thread, me._id)
+      const currentVersion = thread[version] ?? 0
+      if (currentVersion > command.historyVersion) return null
+      if (thread[hidden] || currentVersion !== command.historyVersion) {
+        throw new ConvexError('Het gesprek is gewijzigd. Open het opnieuw.')
+      }
+      const unread = await ctx.db.query('unreadMessages').withIndex('by_recipient_and_conversation',
+        (q) => q.eq('recipient', me._id).eq('conversation', thread._id)).take(inboxLimit)
+      for (const message of unread) await ctx.db.delete('unreadMessages', message._id)
+      await ctx.db.patch('conversations', thread._id, { [hidden]: true, [version]: currentVersion + 1 })
       return null
     }
     if (command.type === 'read') {
@@ -257,7 +303,7 @@ export const update = mutation({
         await ctx.db.insert('interests', { offer: offer._id, owner: offer.owner, collector: me._id })
         await ctx.db.patch('offers', offer._id, { interestedCount: offer.interestedCount + 1, hadInterest: true })
       }
-      return await conversationFor(ctx, offer, me._id)
+      return await conversationFor(ctx, offer, me._id, me._id)
     }
     if (command.type === 'withdraw') {
       if (offer.promisedTo === me._id) throw new ConvexError('Vraag de eigenaar om het exemplaar vrij te geven.')
@@ -291,7 +337,7 @@ export const update = mutation({
     const requester = await ctx.db.get('collectors', person)
     if (!requester || requester.deleting) throw new ConvexError('Deze verzamelaar heeft geen interesse meer.')
     if (!await interestFor(ctx, offer._id, person)) throw new ConvexError('Deze verzamelaar heeft geen interesse meer.')
-    if (command.type === 'openThread') return await conversationFor(ctx, offer, person)
+    if (command.type === 'openThread') return await conversationFor(ctx, offer, person, me._id)
     if (offer.status === 'promised') {
       if (offer.promisedTo === person) return null
       throw new ConvexError('Dit exemplaar is al beloofd.')
@@ -327,13 +373,17 @@ export const setMessageBlock = mutation({
 })
 
 export const send = mutation({
-  args: { threadId: v.string(), clientId: v.string(), text: v.string(), composedAt: v.number() },
+  args: { threadId: v.string(), clientId: v.string(), text: v.string(), composedAt: v.number(), historyVersion: v.optional(v.number()) },
   returns: v.null(),
-  handler: async (ctx, { threadId, clientId, text, composedAt }) => {
+  handler: async (ctx, { threadId, clientId, text, composedAt, historyVersion }) => {
     const me = await requireCollector(ctx)
     const conversation = await ctx.db.get('conversations', idFor(ctx, 'conversations', threadId))
     if (!conversation || (conversation.owner !== me._id && conversation.requester !== me._id)) {
       throw new ConvexError('Dit gesprek is niet beschikbaar.')
+    }
+    const sender = threadFields(conversation, me._id)
+    if (conversation[sender.hidden] || (conversation[sender.version] ?? 0) !== (historyVersion ?? 0)) {
+      throw new ConvexError('Het gesprek is gewijzigd. Open het opnieuw.')
     }
     const body = text.trim()
     if (!body || body.length > 1000 || !/^[\da-f-]{36}$/u.test(clientId)) throw new ConvexError('Gebruik een bericht van maximaal 1.000 tekens.')
@@ -358,6 +408,7 @@ export const send = mutation({
     const queued = await ctx.db.query('unreadMessages').withIndex('by_recipient', (q) => q.eq('recipient', recipient)).take(inboxLimit)
     if (queued.length >= inboxLimit) throw new ConvexError('De inbox van deze verzamelaar zit vol. Probeer het later opnieuw.')
     await ctx.db.insert('unreadMessages', { conversation: conversation._id, recipient, sender: me._id, text: body })
+    await showConversation(ctx, conversation, recipient)
     const delivery = await ctx.db.insert('messageDeliveries', { sender: me._id, clientId, conversation: conversation._id })
     await ctx.scheduler.runAfter(resendWindowMs + 60_000, internal.exchange.forgetDelivery, { delivery })
     return null

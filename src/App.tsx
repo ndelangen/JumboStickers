@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNo
 import { api } from '../convex/_generated/api'
 import { errorMessage, localDemoKey, type BulkMark, type DemoState, type SendMessage, type Update } from './demo'
 import { clearLocalSession, type LocalSelection } from './LocalAccounts'
-import { retireLocalHistory } from './chatStorage'
+import { resumeThreadRemovals, retireLocalHistory } from './chatStorage'
 import { OffersPage } from './pages/OffersPage'
 import { AlbumPage } from './pages/AlbumPage'
 import { MessagesPage } from './pages/MessagesPage'
@@ -179,6 +179,16 @@ export function App({ state, start, commit, markAlbum, historyKey, sendMessage, 
     }
   }, [commit])
 
+  const ready = !!state
+  useEffect(() => {
+    if (!ready || !historyKey) return
+    const resume = () => resumeThreadRemovals(historyKey, (threadId, historyVersion) =>
+      update({ type: 'removeThread', threadId, historyVersion }, { inlineError: true }))
+    resume()
+    window.addEventListener('focus', resume)
+    return () => window.removeEventListener('focus', resume)
+  }, [ready, historyKey, update])
+
   return (
     <div className="app-shell" onClick={followLink}>
       <a href="#inhoud" className="skip-link">Naar inhoud</a>
@@ -222,7 +232,7 @@ export function App({ state, start, commit, markAlbum, historyKey, sendMessage, 
             area === '/inloggen' ? hosted?.signIn ?? <SignInPage navigate={navigate} /> : state ? (
             area === '/ruilen' ? <OffersPage state={state} update={update} navigate={navigate} signedIn={!!sendMessage} /> :
             area === '/album' ? <AlbumPage state={state} update={update} markAlbum={markAlbum} /> :
-            area === '/berichten' ? <MessagesPage state={state} threadId={path.split('/')[2]} demoKey={historyKey} update={update} sendMessage={sendMessage} /> :
+            area === '/berichten' ? <MessagesPage state={state} threadId={path.split('/')[2]} demoKey={historyKey} update={update} sendMessage={sendMessage} navigate={navigate} /> :
             area === '/instellingen' ? <SettingsPage state={state} update={update} demoKey={historyKey}
               eraseAccount={eraseAccount} usesDescope={!!hosted} signOut={hosted?.logout} /> :
             <EmptyState title="Deze pagina bestaat niet" action={<Button component="a" href="/ruilen">Ga naar Ruilen</Button>}>Je vindt alle beschikbare stickers bij Ruilen.</EmptyState>
