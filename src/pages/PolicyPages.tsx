@@ -37,7 +37,7 @@ export function PrivacyPage() {
         <Text>We gebruiken deze gegevens om de ruildienst uit te voeren die je vraagt. Onze diensten kunnen technische gegevens verwerken, zoals je IP-adres, om de site te leveren en te beveiligen. Voor beveiliging en misbruikpreventie steunen we op ons belang om de site veilig te houden.</Text>
       </PolicySection>
       <PolicySection title="Privéberichten">
-        <Text>We bewaren berichttekst tijdelijk in onze database. Zodra de ontvanger het bericht in de geopende chat ziet en diens browser het heeft opgeslagen, verwijderen we de tekst automatisch uit de actieve database. Een ongelezen bericht blijft beschikbaar totdat de ontvanger het opent of een van jullie het Stickerruil-account verwijdert.</Text>
+        <Text>We bewaren berichttekst tijdelijk in onze database. Zodra de ontvanger het bericht in de geopende chat ziet en diens browser het heeft opgeslagen, verwijderen we de tekst automatisch uit de actieve database. Een ongelezen bericht vervalt na 30 dagen. We wissen het eerder als de ontvanger de afzender blokkeert of als een van jullie het Stickerruil-account verwijdert.</Text>
         <Text>Om te voorkomen dat hetzelfde bericht twee keer wordt verzonden, bewaren we ongeveer één dag een verzendkenmerk zonder berichttekst. Gelezen en verzonden berichten blijven in de gebruikte browsers staan totdat de geschiedenis daar wordt gewist.</Text>
       </PolicySection>
       <PolicySection title="Cookies en browseropslag">
