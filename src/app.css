@@ -30,6 +30,9 @@ a:focus-visible {
   padding-block: 14px;
 }
 
+/* Netlify places its label in a fixed frame over the bottom of the page. */
+body:has(#nl-badge-frame) .site-footer-inner { padding-block-end: 72px; }
+
 .site-footer nav { display: flex; flex-wrap: wrap; gap: 2px 20px; }
 .site-footer a { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; font-size: .92rem; }
 .site-footer a[aria-current='page'] { font-weight: 700; text-decoration: underline; }
