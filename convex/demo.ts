@@ -1,17 +1,19 @@
 import { ConvexError, v, type Infer } from 'convex/values'
 import { mutation, query } from './_generated/server'
 import { albumStatus, demoStateFields } from './schema'
+import { albumLength, offerLimit, validNumbers } from './album'
+import { localOrigin } from './localOrigin'
 
 const stateValidator = v.object(demoStateFields)
 type State = Infer<typeof stateValidator>
 
-const command = v.union(
+export const exchangeCommand = v.union(
   v.object({ type: v.literal('album'), numbers: v.array(v.number()), status: v.union(albumStatus, v.literal('double'), v.literal('clear')) }),
   v.object({ type: v.literal('removeDouble'), number: v.number() }),
   v.object({ type: v.literal('want'), offerId: v.string() }),
   v.object({ type: v.literal('withdraw'), offerId: v.string() }),
-  v.object({ type: v.literal('promise'), offerId: v.string(), person: v.union(v.string(), v.null()) }),
-  v.object({ type: v.literal('finish'), offerId: v.string() }),
+  v.object({ type: v.literal('promise'), offerId: v.string(), person: v.union(v.string(), v.null()), expectedRecipient: v.optional(v.string()) }),
+  v.object({ type: v.literal('finish'), offerId: v.string(), expectedRecipient: v.optional(v.string()) }),
   v.object({ type: v.literal('openThread'), offerId: v.string(), person: v.string() }),
   v.object({ type: v.literal('read'), messageId: v.string() }),
   v.object({ type: v.literal('exampleReply'), threadId: v.string() }),
@@ -19,8 +21,7 @@ const command = v.union(
 )
 
 function verifyKey(key: string) {
-  const localUrl = /^http:\/\/(?:127\.0\.0\.1|localhost):\d+\/?$/u
-  if (!localUrl.test(process.env.CONVEX_CLOUD_URL ?? '') || !/^[\da-f-]{36}$/u.test(key)) {
+  if (!localOrigin() || !/^[\da-f-]{36}$/u.test(key)) {
     throw new ConvexError('Deze voorbeeldomgeving is alleen lokaal beschikbaar.')
   }
 }
@@ -73,18 +74,6 @@ function threadWith(threads: State['threads'], offer: State['offers'][number], p
   return id
 }
 
-const albumLength = 175
-const offerLimit = 400
-
-function validNumbers(input: number[]) {
-  const numbers = [...new Set(input)]
-  if (!numbers.length || numbers.length > albumLength ||
-      numbers.some((number) => !Number.isInteger(number) || number < 1 || number > albumLength)) {
-    throw new ConvexError(`Gebruik stickernummers van 1 tot en met ${albumLength}.`)
-  }
-  return numbers
-}
-
 function newOffer(number: number): State['offers'][number] {
   return { id: crypto.randomUUID(), number, owner: 'me', interested: [], promisedTo: null }
 }
@@ -122,7 +111,7 @@ export const markAlbum = mutation({
 })
 
 export const update = mutation({
-  args: { key: v.string(), command },
+  args: { key: v.string(), command: exchangeCommand },
   returns: v.union(v.string(), v.null()),
   handler: async (ctx, { key, command: change }) => {
     verifyKey(key)
@@ -182,6 +171,10 @@ export const update = mutation({
 
     const offer = offers.find((item) => item.id === change.offerId)
     if (!offer) throw new ConvexError('Dit exemplaar is niet meer beschikbaar.')
+    if ((change.type === 'finish' || (change.type === 'promise' && change.person === null)) &&
+        change.expectedRecipient && offer.promisedTo !== change.expectedRecipient) {
+      throw new ConvexError('De afspraak is gewijzigd. Open het aanbod opnieuw.')
+    }
 
     switch (change.type) {
       case 'want':

@@ -529,3 +529,10 @@ a:focus-visible {
   .album-heading-actions .mantine-Button-root { flex: 1 1 auto; padding-inline: 9px; }
   .album-heading-actions .mantine-Button-section { margin-inline-end: 5px; }
 }
+.local-accounts {
+  width: min(100%, 840px);
+  margin: 0 auto 30px;
+  background: var(--album-white);
+  border-color: var(--album-border);
+}
+.local-accounts h2 { font-size: 1.3rem; }

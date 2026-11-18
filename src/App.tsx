@@ -1,9 +1,10 @@
 import { Alert, Anchor, Badge, Button, Group, Loader, Paper, Text, Title } from '@mantine/core'
-import { useMutation, useQuery } from 'convex/react'
+import { useConvexAuth, useMutation, useQuery } from 'convex/react'
 import { ArrowLeftRight, BookOpen, MessageCircle, Settings, Sticker as StickerIcon } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import { api } from '../convex/_generated/api'
-import { errorMessage, localDemoKey, type Update } from './demo'
+import { errorMessage, localDemoKey, type BulkMark, type DemoState, type SendMessage, type Update } from './demo'
+import type { LocalAccount } from './LocalAccounts'
 import { OffersPage } from './pages/OffersPage'
 import { AlbumPage } from './pages/AlbumPage'
 import { MessagesPage } from './pages/MessagesPage'
@@ -21,11 +22,40 @@ function activeArea(path: string) {
   return path === '/' ? '/ruilen' : '/' + path.split('/')[1]
 }
 
-export function App() {
+export function DemoApp() {
   const [demoKey] = useState(localDemoKey)
   const state = useQuery(api.demo.get, { key: demoKey })
-  const start = useMutation(api.demo.start)
+  const initialize = useMutation(api.demo.start)
   const mutate = useMutation(api.demo.update)
+  const mark = useMutation(api.demo.markAlbum)
+  const start = useCallback(() => initialize({ key: demoKey }), [demoKey, initialize])
+  const update = useCallback<Update>((command) => mutate({ key: demoKey, command }), [demoKey, mutate])
+  const markAlbum = useCallback<BulkMark>((args) => mark({ key: demoKey, ...args }), [demoKey, mark])
+  return <App state={state} start={start} commit={update} markAlbum={markAlbum} historyKey={demoKey} />
+}
+
+export function ExchangeApp({ account }: { account: LocalAccount }) {
+  const { isLoading, isAuthenticated } = useConvexAuth()
+  const state = useQuery(api.exchange.get, isAuthenticated ? {} : 'skip')
+  const initialize = useMutation(api.exchange.start)
+  const mutate = useMutation(api.exchange.update)
+  const markAlbum = useMutation(api.exchange.markAlbum)
+  const sendMessage = useMutation(api.exchange.send)
+  const start = useCallback(() => initialize({}), [initialize])
+  const update = useCallback<Update>((command) => mutate({ command }), [mutate])
+  return <App state={state} start={start} commit={update} markAlbum={markAlbum}
+    sendMessage={sendMessage} historyKey={`local:${account}`} authStopped={!isLoading && !isAuthenticated} />
+}
+
+function App({ state, start, commit, markAlbum, historyKey, sendMessage, authStopped = false }: {
+  state: DemoState | null | undefined
+  start: () => Promise<null>
+  commit: Update
+  markAlbum: BulkMark
+  historyKey: string
+  sendMessage?: SendMessage
+  authStopped?: boolean
+}) {
   const [path, setPath] = useState(location.pathname)
   const [error, setError] = useState('')
   const content = useRef<HTMLElement>(null)
@@ -34,8 +64,8 @@ export function App() {
 
   useEffect(() => {
     if (state !== null) return
-    void start({ key: demoKey }).catch((cause) => setError(errorMessage(cause)))
-  }, [demoKey, start, state])
+    void start().catch((cause) => setError(errorMessage(cause)))
+  }, [start, state])
 
   useEffect(() => {
     function followHistory() {
@@ -67,21 +97,21 @@ export function App() {
     const target = event.target
     const link = target instanceof Element ? target.closest('a') : null
     const href = link?.getAttribute('href')
-    if (!href?.startsWith('/') || href.startsWith('//') || link?.target) return
+    if (!href?.startsWith('/') || href.startsWith('//') || link?.target || link?.hasAttribute('data-reload')) return
     event.preventDefault()
     navigate(href)
   }
 
   const update = useCallback<Update>(async (command, options) => {
     try {
-      const result = await mutate({ key: demoKey, command })
+      const result = await commit(command)
       setError('')
       return result
     } catch (cause) {
       if (!options?.inlineError) setError(errorMessage(cause))
       throw cause
     }
-  }, [demoKey, mutate])
+  }, [commit])
 
   return (
     <div className="app-shell" onClick={followLink}>
@@ -104,8 +134,8 @@ export function App() {
       </header>
       <div className="demo-strip">
         <div className="site-width">
-          <Badge variant="light" color="ochre">Voorbeeldgegevens</Badge>
-          <Anchor href="/inloggen" size="sm" fw={700}>Inloggen</Anchor>
+          <Badge variant="light" color="ochre">{sendMessage ? `Proefaccount · ${state?.displayName ?? '…'}` : 'Voorbeeldgegevens'}</Badge>
+          <Anchor href="/inloggen" size="sm" fw={700}>{sendMessage ? 'Proefaccounts' : 'Inloggen'}</Anchor>
         </div>
       </div>
       {error && (
@@ -117,10 +147,15 @@ export function App() {
         <div className="page-transition" key={area}>
           {area === '/inloggen' ? <SignInPage navigate={navigate} /> : state ? (
             area === '/ruilen' ? <OffersPage state={state} update={update} navigate={navigate} /> :
-            area === '/album' ? <AlbumPage state={state} update={update} demoKey={demoKey} /> :
-            area === '/berichten' ? <MessagesPage state={state} threadId={path.split('/')[2]} demoKey={demoKey} update={update} /> :
-            area === '/instellingen' ? <SettingsPage state={state} update={update} demoKey={demoKey} /> :
+            area === '/album' ? <AlbumPage state={state} update={update} markAlbum={markAlbum} /> :
+            area === '/berichten' ? <MessagesPage state={state} threadId={path.split('/')[2]} demoKey={historyKey} update={update} sendMessage={sendMessage} /> :
+            area === '/instellingen' ? <SettingsPage state={state} update={update} demoKey={historyKey} /> :
             <EmptyState title="Deze pagina bestaat niet" action={<Button component="a" href="/ruilen">Ga naar Ruilen</Button>}>Je vindt alle beschikbare stickers bij Ruilen.</EmptyState>
+          ) : authStopped ? (
+            <EmptyState title="Proefaccount kon niet openen" action={<Button onClick={() => window.location.reload()}>Opnieuw proberen</Button>}>
+              <Anchor href="/inloggen">Terug naar inloggen</Anchor>
+              Controleer of de lokale Convex-server draait.
+            </EmptyState>
           ) : <Group className="loading" role="status"><Loader size="sm" /><Text>Even het album pakken…</Text></Group>}
         </div>
       </main>

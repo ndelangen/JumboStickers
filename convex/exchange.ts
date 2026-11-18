@@ -1,0 +1,318 @@
+import { ConvexError, v } from 'convex/values'
+import type { Doc, Id, TableNames } from './_generated/dataModel'
+import { internal } from './_generated/api'
+import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
+import { albumLength, offerLimit, validNumbers } from './album'
+import { exchangeCommand } from './demo'
+import { localOrigin } from './localOrigin'
+import { albumStatus, demoStateFields } from './schema'
+
+const peopleValidator = v.record(v.string(), v.object({ name: v.string(), wants: v.array(v.number()) }))
+const snapshotValidator = v.object({ ...demoStateFields, people: peopleValidator })
+const inboxLimit = 250
+const localNetworkLimit = 3 * offerLimit
+const resendWindowMs = 24 * 60 * 60 * 1000
+
+async function collectorFor(ctx: QueryCtx | MutationCtx, identity: string) {
+  return await ctx.db.query('collectors').withIndex('by_identity', (q) => q.eq('identity', identity)).unique()
+}
+
+async function requireCollector(ctx: MutationCtx) {
+  const identity = await ctx.auth.getUserIdentity()
+  const collector = identity && await collectorFor(ctx, identity.tokenIdentifier)
+  if (!collector) throw new ConvexError('Log in om deze actie uit te voeren.')
+  return collector
+}
+
+function idFor<Table extends TableNames>(ctx: MutationCtx, table: Table, id: string) {
+  const result = ctx.db.normalizeId(table, id)
+  if (!result) throw new ConvexError('Dit onderdeel bestaat niet meer.')
+  return result
+}
+
+async function ownOffers(ctx: QueryCtx | MutationCtx, owner: Id<'collectors'>) {
+  return await ctx.db.query('offers').withIndex('by_owner', (q) => q.eq('owner', owner)).take(offerLimit)
+}
+
+function threadView(thread: Doc<'conversations'>, viewer: Id<'collectors'>) {
+  return {
+    id: thread._id,
+    offerId: thread.offer,
+    number: thread.number,
+    person: thread.owner === viewer ? thread.requester : thread.owner,
+  }
+}
+
+export const start = mutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity()
+    if (!identity) throw new ConvexError('Log in om je album te openen.')
+    if (await collectorFor(ctx, identity.tokenIdentifier)) return null
+
+    const persona = identity.issuer === localOrigin() ? identity.subject : null
+    const example = persona === 'local:noor' ? { wanted: 12, spare: 34 } :
+      persona === 'local:sam' ? { wanted: 34, spare: 12 } : null
+    const id = await ctx.db.insert('collectors', {
+      identity: identity.tokenIdentifier,
+      displayName: identity.name?.trim().slice(0, 32) || 'Verzamelaar',
+      digest: false,
+      album: example ? { [example.wanted]: 'wanted', [example.spare]: 'owned' } : {},
+    })
+    if (example) await ctx.db.insert('offers', { owner: id, number: example.spare, interestedCount: 0, status: 'available' })
+    return null
+  },
+})
+
+export const get = query({
+  args: {},
+  returns: v.union(snapshotValidator, v.null()),
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity()
+    const me = identity && await collectorFor(ctx, identity.tokenIdentifier)
+    if (!me) return null
+
+    const [mine, available, fromMe, forMe, opened, received, inbox] = await Promise.all([
+      ownOffers(ctx, me._id),
+      ctx.db.query('offers').withIndex('by_status', (q) => q.eq('status', 'available')).take(localNetworkLimit),
+      ctx.db.query('interests').withIndex('by_collector', (q) => q.eq('collector', me._id)).take(localNetworkLimit),
+      ctx.db.query('interests').withIndex('by_owner', (q) => q.eq('owner', me._id)).take(localNetworkLimit),
+      ctx.db.query('conversations').withIndex('by_requester', (q) => q.eq('requester', me._id)).order('desc').take(localNetworkLimit),
+      ctx.db.query('conversations').withIndex('by_owner', (q) => q.eq('owner', me._id)).order('desc').take(localNetworkLimit),
+      ctx.db.query('unreadMessages').withIndex('by_recipient', (q) => q.eq('recipient', me._id)).take(inboxLimit),
+    ])
+    const mineInterested = new Set(fromMe.map((item) => item.offer))
+    const receivedInterests = new Map<Id<'offers'>, string[]>()
+    for (const interest of forMe) {
+      const people = receivedInterests.get(interest.offer) ?? []
+      people.push(interest.collector)
+      receivedInterests.set(interest.offer, people)
+    }
+    const availableIds = new Set(available.map((offer) => offer._id))
+    const otherRequested = await Promise.all(fromMe.filter((item) => !availableIds.has(item.offer)).map((item) => ctx.db.get('offers', item.offer)))
+    const offers = new Map<Id<'offers'>, Doc<'offers'>>()
+    for (const offer of [...available, ...mine, ...otherRequested]) if (offer) offers.set(offer._id, offer)
+    const threadMap = new Map([...opened, ...received].map((thread) => [thread._id, thread]))
+    const olderUnread = [...new Set(inbox.map((message) => message.conversation))].filter((id) => !threadMap.has(id))
+    for (const thread of await Promise.all(olderUnread.map((id) => ctx.db.get('conversations', id)))) {
+      if (thread && (thread.owner === me._id || thread.requester === me._id)) threadMap.set(thread._id, thread)
+    }
+    const threads = [...threadMap.values()].sort((a, b) => b._creationTime - a._creationTime).map((thread) => threadView(thread, me._id))
+
+    const ownAvailableNumbers = new Set(mine.filter((offer) => offer.status === 'available').map((offer) => offer.number))
+    const related = new Set<Id<'collectors'>>([
+      ...[...offers.values()].map((offer) => offer.owner),
+      ...forMe.map((interest) => interest.collector),
+      ...threads.map((thread) => thread.person),
+    ])
+    related.delete(me._id)
+    const profiles = await Promise.all([...related].map((id) => ctx.db.get('collectors', id)))
+    return {
+      displayName: me.displayName,
+      digest: me.digest,
+      album: me.album,
+      people: Object.fromEntries(profiles.flatMap((profile) => profile ? [[profile._id, {
+        name: profile.displayName,
+        wants: [...ownAvailableNumbers].filter((number) => profile.album[number] === 'wanted'),
+      }]] : [])),
+      offers: [...offers.values()].map((offer) => ({
+        id: offer._id,
+        number: offer.number,
+        owner: offer.owner === me._id ? 'me' : offer.owner,
+        interested: offer.owner === me._id ? receivedInterests.get(offer._id) ?? [] : mineInterested.has(offer._id) ? ['me'] : [],
+        interestCount: offer.interestedCount,
+        promisedTo: offer.promisedTo === me._id ? 'me' : offer.owner === me._id ? offer.promisedTo ?? null :
+          offer.status === 'promised' ? 'reserved' : null,
+      })),
+      threads,
+      inbox: inbox.map((message) => ({ id: message._id, threadId: message.conversation, text: message.text, sentAt: message._creationTime })),
+    }
+  },
+})
+
+export const getConversation = query({
+  args: { threadId: v.string() },
+  returns: v.union(v.null(), v.object({
+    id: v.id('conversations'), offerId: v.id('offers'), number: v.number(), person: v.id('collectors'), name: v.string(),
+  })),
+  handler: async (ctx, { threadId }) => {
+    const identity = await ctx.auth.getUserIdentity()
+    const me = identity && await collectorFor(ctx, identity.tokenIdentifier)
+    const id = ctx.db.normalizeId('conversations', threadId)
+    const thread = id && await ctx.db.get('conversations', id)
+    if (!me || !thread || (thread.owner !== me._id && thread.requester !== me._id)) return null
+    const view = threadView(thread, me._id)
+    const person = await ctx.db.get('collectors', view.person)
+    return { ...view, name: person?.displayName ?? 'Verzamelaar' }
+  },
+})
+
+type MarkStatus = 'wanted' | 'owned' | 'double' | 'clear'
+
+async function markNumbers(ctx: MutationCtx, me: Doc<'collectors'>, scope: 'all' | 'empty' | number[], status: MarkStatus, strict: boolean) {
+  const offers = await ownOffers(ctx, me._id)
+  const offered = new Set(offers.map((offer) => offer.number))
+  const numbers = typeof scope === 'string' ? Array.from({ length: albumLength }, (_, index) => index + 1) : validNumbers(scope)
+  const candidates = scope === 'empty' ? numbers.filter((number) => !me.album[number]) : numbers
+  const protectedNumbers = status === 'wanted' || status === 'clear' ? candidates.filter((number) => offered.has(number)) : []
+  if (strict && protectedNumbers.length) {
+    throw new ConvexError(`Haal deze nummers eerst uit je aanbod: ${protectedNumbers.join(', ')}.`)
+  }
+
+  const changed = candidates.filter((number) => {
+    if (status === 'double') return typeof scope !== 'string' || !offered.has(number)
+    if (status === 'clear') return !!me.album[number] && !offered.has(number)
+    return me.album[number] !== status && (status !== 'wanted' || !offered.has(number))
+  })
+  if (status === 'double' && offers.length + changed.length > offerLimit) throw new ConvexError('Je aanbod zit vol.')
+  if (!changed.length) return { changed: 0, protectedCount: protectedNumbers.length }
+
+  const album = { ...me.album }
+  for (const number of changed) {
+    if (status === 'clear') delete album[number]
+    else album[number] = status === 'double' ? 'owned' : status
+    if (status === 'double') await ctx.db.insert('offers', { owner: me._id, number, status: 'available', interestedCount: 0 })
+  }
+  await ctx.db.patch('collectors', me._id, { album })
+  return { changed: changed.length, protectedCount: protectedNumbers.length }
+}
+
+export const markAlbum = mutation({
+  args: {
+    scope: v.union(v.literal('all'), v.literal('empty'), v.array(v.number())),
+    status: v.union(albumStatus, v.literal('double')),
+  },
+  returns: v.object({ changed: v.number(), protectedCount: v.number() }),
+  handler: async (ctx, { scope, status }) => markNumbers(ctx, await requireCollector(ctx), scope, status, false),
+})
+
+async function conversationFor(ctx: MutationCtx, offer: Doc<'offers'>, requester: Id<'collectors'>) {
+  const existing = await ctx.db.query('conversations').withIndex('by_offer_and_requester',
+    (q) => q.eq('offer', offer._id).eq('requester', requester)).unique()
+  return existing?._id ?? await ctx.db.insert('conversations', {
+    offer: offer._id, number: offer.number, owner: offer.owner, requester,
+  })
+}
+
+async function interestFor(ctx: MutationCtx, offer: Id<'offers'>, collector: Id<'collectors'>) {
+  return ctx.db.query('interests').withIndex('by_offer_and_collector', (q) => q.eq('offer', offer).eq('collector', collector)).unique()
+}
+
+export const update = mutation({
+  args: { command: exchangeCommand },
+  returns: v.union(v.string(), v.null()),
+  handler: async (ctx, { command }) => {
+    const me = await requireCollector(ctx)
+
+    if (command.type === 'album') {
+      await markNumbers(ctx, me, command.numbers, command.status, true)
+      return null
+    }
+    if (command.type === 'profile') {
+      const displayName = command.displayName.trim()
+      if (!displayName || displayName.length > 32) throw new ConvexError('Kies een naam van maximaal 32 tekens.')
+      await ctx.db.patch('collectors', me._id, { displayName, digest: command.digest })
+      return null
+    }
+    if (command.type === 'read') {
+      const message = await ctx.db.get('unreadMessages', idFor(ctx, 'unreadMessages', command.messageId))
+      if (message?.recipient === me._id) await ctx.db.delete('unreadMessages', message._id)
+      return null
+    }
+    if (command.type === 'exampleReply') throw new ConvexError('Stuur een bericht vanaf het andere proefaccount.')
+    if (command.type === 'removeDouble') {
+      const offers = await ctx.db.query('offers').withIndex('by_owner_and_number',
+        (q) => q.eq('owner', me._id).eq('number', command.number)).take(offerLimit)
+      const free = offers.find((offer) => offer.status === 'available' && offer.interestedCount === 0)
+      if (!free) throw new ConvexError('Dit exemplaar heeft al interesse of is beloofd.')
+      await ctx.db.delete('offers', free._id)
+      return null
+    }
+
+    const offer = await ctx.db.get('offers', idFor(ctx, 'offers', command.offerId))
+    if (!offer) throw new ConvexError('Dit exemplaar is niet meer beschikbaar.')
+    if (command.type === 'want') {
+      const interest = await interestFor(ctx, offer._id, me._id)
+      if (offer.owner === me._id || (!interest && offer.status !== 'available')) throw new ConvexError('Dit exemplaar is niet beschikbaar.')
+      if (!interest) {
+        await ctx.db.insert('interests', { offer: offer._id, owner: offer.owner, collector: me._id })
+        await ctx.db.patch('offers', offer._id, { interestedCount: offer.interestedCount + 1 })
+      }
+      return await conversationFor(ctx, offer, me._id)
+    }
+    if (command.type === 'withdraw') {
+      if (offer.promisedTo === me._id) throw new ConvexError('Vraag de eigenaar om het exemplaar vrij te geven.')
+      const interest = await interestFor(ctx, offer._id, me._id)
+      if (interest) {
+        await ctx.db.delete('interests', interest._id)
+        await ctx.db.patch('offers', offer._id, { interestedCount: offer.interestedCount - 1 })
+      }
+      return null
+    }
+
+    if (offer.owner !== me._id) throw new ConvexError('Alleen de eigenaar kan dit exemplaar beheren.')
+    if ((command.type === 'finish' || (command.type === 'promise' && command.person === null)) &&
+        (!command.expectedRecipient || offer.promisedTo !== command.expectedRecipient)) {
+      throw new ConvexError('De afspraak is gewijzigd. Open het aanbod opnieuw.')
+    }
+    if (command.type === 'finish') {
+      if (offer.status !== 'promised') throw new ConvexError('Beloof het exemplaar eerst aan iemand.')
+      const interests = await ctx.db.query('interests').withIndex('by_offer_and_collector', (q) => q.eq('offer', offer._id)).take(localNetworkLimit)
+      for (const interest of interests) await ctx.db.delete('interests', interest._id)
+      await ctx.db.delete('offers', offer._id)
+      return null
+    }
+    if (command.type === 'promise' && command.person === null) {
+      await ctx.db.patch('offers', offer._id, { status: 'available', promisedTo: undefined })
+      return null
+    }
+    if (command.person === null) return null
+    const person = idFor(ctx, 'collectors', command.person)
+    if (!await interestFor(ctx, offer._id, person)) throw new ConvexError('Deze verzamelaar heeft geen interesse meer.')
+    if (command.type === 'openThread') return await conversationFor(ctx, offer, person)
+    if (offer.status === 'promised') {
+      if (offer.promisedTo === person) return null
+      throw new ConvexError('Dit exemplaar is al beloofd.')
+    }
+    await ctx.db.patch('offers', offer._id, { status: 'promised', promisedTo: person })
+    return null
+  },
+})
+
+export const send = mutation({
+  args: { threadId: v.string(), clientId: v.string(), text: v.string(), composedAt: v.number() },
+  returns: v.null(),
+  handler: async (ctx, { threadId, clientId, text, composedAt }) => {
+    const me = await requireCollector(ctx)
+    const conversation = await ctx.db.get('conversations', idFor(ctx, 'conversations', threadId))
+    if (!conversation || (conversation.owner !== me._id && conversation.requester !== me._id)) {
+      throw new ConvexError('Dit gesprek is niet beschikbaar.')
+    }
+    const body = text.trim()
+    if (!body || body.length > 1000 || !/^[\da-f-]{36}$/u.test(clientId)) throw new ConvexError('Gebruik een bericht van maximaal 1.000 tekens.')
+    const seen = await ctx.db.query('messageDeliveries').withIndex('by_sender_and_clientId',
+      (q) => q.eq('sender', me._id).eq('clientId', clientId)).unique()
+    if (seen) return null
+    const age = Date.now() - composedAt
+    if (!Number.isFinite(age) || age > resendWindowMs || age < -60_000) {
+      throw new ConvexError('Dit bericht is verlopen. Je kunt de tekst kopiëren naar een nieuw bericht.')
+    }
+    const recipient = conversation.owner === me._id ? conversation.requester : conversation.owner
+    const queued = await ctx.db.query('unreadMessages').withIndex('by_recipient', (q) => q.eq('recipient', recipient)).take(inboxLimit)
+    if (queued.length >= inboxLimit) throw new ConvexError('De inbox van deze verzamelaar zit vol. Probeer het later opnieuw.')
+    await ctx.db.insert('unreadMessages', { conversation: conversation._id, recipient, text: body })
+    const delivery = await ctx.db.insert('messageDeliveries', { sender: me._id, clientId })
+    await ctx.scheduler.runAfter(resendWindowMs + 60_000, internal.exchange.forgetDelivery, { delivery })
+    return null
+  },
+})
+
+export const forgetDelivery = internalMutation({
+  args: { delivery: v.id('messageDeliveries') },
+  returns: v.null(),
+  handler: async (ctx, { delivery }) => {
+    await ctx.db.delete('messageDeliveries', delivery)
+    return null
+  },
+})

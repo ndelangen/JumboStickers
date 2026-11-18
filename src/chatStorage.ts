@@ -4,6 +4,7 @@ export type LocalMessage = {
   direction: 'in' | 'out'
   text: string
   sentAt: number
+  delivery?: 'pending' | 'sent'
 }
 
 function openHistory(key: string): Promise<IDBDatabase> {

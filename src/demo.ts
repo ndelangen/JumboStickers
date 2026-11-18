@@ -2,11 +2,15 @@ import type { FunctionArgs, FunctionReturnType } from 'convex/server'
 import { ConvexError } from 'convex/values'
 import { api } from '../convex/_generated/api'
 
-export type DemoState = NonNullable<FunctionReturnType<typeof api.demo.get>>
+export type DemoState = NonNullable<FunctionReturnType<typeof api.demo.get>> & {
+  people?: NonNullable<FunctionReturnType<typeof api.exchange.get>>['people']
+}
 export type Command = FunctionArgs<typeof api.demo.update>['command']
 export type Offer = DemoState['offers'][number]
 export type Thread = DemoState['threads'][number]
 export type Update = (command: Command, options?: { inlineError?: boolean }) => Promise<string | null>
+export type BulkMark = (args: FunctionArgs<typeof api.exchange.markAlbum>) => Promise<FunctionReturnType<typeof api.exchange.markAlbum>>
+export type SendMessage = (args: FunctionArgs<typeof api.exchange.send>) => Promise<null>
 
 export function errorMessage(error: unknown) {
   return error instanceof ConvexError && typeof error.data === 'string'
@@ -24,8 +28,15 @@ const people: Record<string, { name: string; initials: string; wants: number[] }
   eva: { name: 'Eva P.', initials: 'EP', wants: [12, 23] },
 }
 
-export function personFor(id: string) {
-  return people[id] ?? { name: 'Jij', initials: 'JI', wants: [] }
+export function personFor(id: string, state: DemoState) {
+  if (id === 'me') return { name: state.displayName, initials: initialsFor(state.displayName), wants: [] }
+  const person = state.people?.[id]
+  if (person) return { ...person, initials: initialsFor(person.name) }
+  return people[id] ?? { name: 'Verzamelaar', initials: 'V', wants: [] }
+}
+
+function initialsFor(name: string) {
+  return name.split(/\s+/u).slice(0, 2).map((word) => word[0]).join('').toUpperCase()
 }
 
 const samples: Record<number, string> = { 34: 'Water', 80: 'Knooppunten', 126: 'Thuis', 151: 'Samenleven' }

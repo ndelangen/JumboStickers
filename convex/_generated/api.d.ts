@@ -8,7 +8,11 @@
  * @module
  */
 
+import type * as album from "../album.js";
 import type * as demo from "../demo.js";
+import type * as exchange from "../exchange.js";
+import type * as localIdentity from "../localIdentity.js";
+import type * as localOrigin from "../localOrigin.js";
 
 import type {
   ApiFromModules,
@@ -17,7 +21,11 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  album: typeof album;
   demo: typeof demo;
+  exchange: typeof exchange;
+  localIdentity: typeof localIdentity;
+  localOrigin: typeof localOrigin;
 }>;
 
 /**

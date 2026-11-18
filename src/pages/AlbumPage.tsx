@@ -1,9 +1,7 @@
 import { useRef, useState } from 'react'
 import { Alert, Button, Group, Modal, SegmentedControl, Stack, Text, TextInput } from '@mantine/core'
-import { useMutation } from 'convex/react'
 import { ClipboardList, CopyPlus, ListChecks, Search } from 'lucide-react'
-import { api } from '../../convex/_generated/api'
-import { albumSize, catalog, errorMessage, myOffers, parseStickerNumbers, themeFor, type Command, type DemoState, type Update } from '../demo'
+import { albumSize, catalog, errorMessage, myOffers, parseStickerNumbers, themeFor, type BulkMark as ApplyBulkMark, type Command, type DemoState, type Update } from '../demo'
 import { AlbumProgress, EmptyState, PageHeading, StatusStamp } from '../ui'
 
 const filters = [
@@ -13,7 +11,7 @@ const filters = [
 type Filter = (typeof filters)[number]['id']
 type Scope = 'all' | 'empty' | 'numbers'
 
-export function AlbumPage({ state, update, demoKey }: { state: DemoState; update: Update; demoKey: string }) {
+export function AlbumPage({ state, update, markAlbum }: { state: DemoState; update: Update; markAlbum: ApplyBulkMark }) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [selected, setSelected] = useState<number | null>(null)
@@ -157,7 +155,7 @@ export function AlbumPage({ state, update, demoKey }: { state: DemoState; update
       </Modal>
 
       {bulkScope && (
-        <BulkMark initialScope={bulkScope} demoKey={demoKey} onClose={closeBulk} onSaved={(message) => {
+        <BulkMark initialScope={bulkScope} markAlbum={markAlbum} onClose={closeBulk} onSaved={(message) => {
           setFeedback(message)
           closeBulk()
         }} />
@@ -166,9 +164,9 @@ export function AlbumPage({ state, update, demoKey }: { state: DemoState; update
   )
 }
 
-function BulkMark({ initialScope, demoKey, onClose, onSaved }: {
+function BulkMark({ initialScope, markAlbum, onClose, onSaved }: {
   initialScope: Scope
-  demoKey: string
+  markAlbum: ApplyBulkMark
   onClose: () => void
   onSaved: (message: string) => void
 }) {
@@ -177,7 +175,6 @@ function BulkMark({ initialScope, demoKey, onClose, onSaved }: {
   const [inputError, setInputError] = useState<string | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const markAlbum = useMutation(api.demo.markAlbum)
 
   async function mark(status: 'wanted' | 'double' | 'owned') {
     const selection = scope === 'numbers' ? parseStickerNumbers(input) : scope
@@ -188,7 +185,7 @@ function BulkMark({ initialScope, demoKey, onClose, onSaved }: {
     setBusy(true)
     setSubmitError(null)
     try {
-      const { changed, protectedCount } = await markAlbum({ key: demoKey, scope: selection, status })
+      const { changed, protectedCount } = await markAlbum({ scope: selection, status })
       const total = changed === 1 ? '1 sticker' : `${changed} stickers`
       let message = scope === 'empty' ? 'Er zijn geen lege vakjes om bij te werken.' : 'Deze stickers stonden al zo.'
       if (changed) {

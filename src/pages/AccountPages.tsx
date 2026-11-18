@@ -37,6 +37,17 @@ export function SignInPage({ navigate }: { navigate: (path: string) => void }) {
           </Stack>
         </Paper>
       </section>
+      <Paper withBorder className="local-accounts" p="md">
+        <Stack gap="sm">
+          <Title order={2}>Probeer samen te ruilen</Title>
+          <Text>Open Noor en Sam elk in een eigen tabblad. In de beginstand biedt Noor sticker 34 aan en Sam sticker 12.</Text>
+          <Group gap="xs">
+            <Button component="a" href="/ruilen?proef=noor" target="_blank" rel="noopener">Open Noor</Button>
+            <Button component="a" href="/ruilen?proef=sam" target="_blank" rel="noopener" variant="light">Open Sam</Button>
+            <Anchor href="/ruilen?proef=demo" data-reload>Terug naar de losse demo</Anchor>
+          </Group>
+        </Stack>
+      </Paper>
       <div className="sign-in-credit"><PhotoCredit /></div>
     </>
   )

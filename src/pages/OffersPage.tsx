@@ -23,7 +23,7 @@ export function OffersPage({ state, update, navigate }: { state: DemoState; upda
 
   function canTrade(offer: Offer) {
     return state.album[offer.number] === 'wanted' && doubles.some((mine) =>
-      !mine.promisedTo && personFor(offer.owner).wants.includes(mine.number),
+      !mine.promisedTo && personFor(offer.owner, state).wants.includes(mine.number),
     )
   }
 
@@ -92,7 +92,7 @@ export function OffersPage({ state, update, navigate }: { state: DemoState; upda
               {offers.map((offer) => {
                 const mine = offer.owner === 'me'
                 const active = offer.interested.includes('me')
-                const owner = personFor(offer.owner)
+                const owner = personFor(offer.owner, state)
                 const label = mine ? 'Beheer exemplaar' : active ? 'Bekijk gesprek' : 'Ik wil deze sticker'
                 return (
                   <Paper key={offer.id} className="offer paper-in" component="article" withBorder>
@@ -108,7 +108,7 @@ export function OffersPage({ state, update, navigate }: { state: DemoState; upda
                       {themeFor(offer.number) && <Text c="dimmed" size="sm">{themeFor(offer.number)}</Text>}
                       <Group gap={8} className="offer-person" wrap="nowrap">
                         <Avatar size={34} color="ochre" aria-hidden>{owner.initials}</Avatar>
-                        <div><Text size="sm" fw={700}>{mine ? state.displayName : owner.name}</Text><Text size="sm" c="dimmed">{interestLabel(offer.interested.length)}</Text></div>
+                        <div><Text size="sm" fw={700}>{mine ? state.displayName : owner.name}</Text><Text size="sm" c="dimmed">{interestLabel(offer.interestCount ?? offer.interested.length)}</Text></div>
                       </Group>
                       <Button fullWidth size="sm" variant={active ? 'light' : 'outline'} disabled={!mine && !!offer.promisedTo && !active}
                         leftSection={mine ? <Settings2 size={15} aria-hidden /> : active ? <Check size={15} aria-hidden /> : undefined}
@@ -137,17 +137,17 @@ export function OffersPage({ state, update, navigate }: { state: DemoState; upda
           <Stack>
             {selected.promisedTo ? (
               <>
-                <Text>Beloofd aan <strong>{personFor(selected.promisedTo).name}</strong></Text>
+                <Text>Beloofd aan <strong>{personFor(selected.promisedTo, state).name}</strong></Text>
                 <Button variant="outline" disabled={busy} onClick={() => {
                   const person = selected.promisedTo
                   if (person) void handle(() => openThread(selected, person))
                 }}>Open gesprek</Button>
                 <Button loading={busy} onClick={() => void handle(async () => {
-                  await update({ type: 'finish', offerId: selected.id })
+                  await update({ type: 'finish', offerId: selected.id, expectedRecipient: selected.promisedTo ?? undefined })
                   setFeedback(`Sticker ${selected.number} is weggegeven.`)
                   setSelectedId(null)
                 })}>Markeer als weggegeven</Button>
-                <Button variant="light" disabled={busy} onClick={() => void handle(() => update({ type: 'promise', offerId: selected.id, person: null }))}>Geef weer vrij</Button>
+                <Button variant="light" disabled={busy} onClick={() => void handle(() => update({ type: 'promise', offerId: selected.id, person: null, expectedRecipient: selected.promisedTo ?? undefined }))}>Geef weer vrij</Button>
               </>
             ) : (
               <>
@@ -155,9 +155,9 @@ export function OffersPage({ state, update, navigate }: { state: DemoState; upda
                 {selected.interested.length === 0 && <Text c="dimmed">Zodra iemand de sticker wil, verschijnt die persoon hier.</Text>}
                 {selected.interested.map((person) => (
                   <Paper key={person} withBorder p="sm">
-                    <Text fw={700} mb={6}>{personFor(person).name}</Text>
+                    <Text fw={700} mb={6}>{personFor(person, state).name}</Text>
                     <Group gap="xs">
-                      <Button size="compact-sm" loading={busy} onClick={() => void handle(() => update({ type: 'promise', offerId: selected.id, person }))}>Beloof aan {personFor(person).name.split(' ')[0]}</Button>
+                      <Button size="compact-sm" loading={busy} onClick={() => void handle(() => update({ type: 'promise', offerId: selected.id, person }))}>Beloof aan {personFor(person, state).name.split(' ')[0]}</Button>
                       <Button size="compact-sm" variant="light" disabled={busy} onClick={() => void handle(() => openThread(selected, person))}>Open gesprek</Button>
                     </Group>
                   </Paper>
@@ -167,7 +167,7 @@ export function OffersPage({ state, update, navigate }: { state: DemoState; upda
           </Stack>
         ) : selected && (
           <Stack>
-            <Text>Toon interesse en open een privégesprek met {personFor(selected.owner).name}.</Text>
+            <Text>Toon interesse en open een privégesprek met {personFor(selected.owner, state).name}.</Text>
             <Button loading={busy} disabled={!!selected.promisedTo}
               leftSection={<HandHeart size={19} aria-hidden />} onClick={() => void handle(() => openThread(selected))}>Toon interesse</Button>
           </Stack>
