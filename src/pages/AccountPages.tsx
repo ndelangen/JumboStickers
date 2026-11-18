@@ -62,7 +62,7 @@ export function SignInPage({ navigate }: { navigate: (path: string) => void }) {
   )
 }
 
-function DigestSettings() {
+function DigestSettings({ signOut }: { signOut: () => void }) {
   const preferences = useQuery(api.digest.preferences)
   const subscribe = useMutation(api.digest.subscribe)
   const [busy, setBusy] = useState(false)
@@ -83,7 +83,12 @@ function DigestSettings() {
           catch (cause) { setError(errorMessage(cause)) }
           finally { setBusy(false) }
         }} />
-      {!preferences.verifiedEmail && !preferences.subscribed && <Text size="sm">Log opnieuw in om ruilmails aan te zetten.</Text>}
+      {!preferences.verifiedEmail && !preferences.subscribed && (
+        <Text size="sm">
+          <Anchor component="button" type="button" size="inherit" underline="always" onClick={signOut}>Log opnieuw in</Anchor>
+          {' '}om ruilmails aan te zetten. Vraag daarna een nieuwe inloglink aan met hetzelfde e-mailadres.
+        </Text>
+      )}
       {error && <Text role="alert" c="red">{error}</Text>}
     </Stack>
   </Paper>
@@ -116,12 +121,13 @@ export function SignupProfile({ register }: {
   </Paper>
 }
 
-export function SettingsPage({ state, update, demoKey, eraseAccount, usesDescope }: {
+export function SettingsPage({ state, update, demoKey, eraseAccount, usesDescope, signOut }: {
   state: DemoState
   update: Update
   demoKey: string
   eraseAccount?: () => Promise<null>
   usesDescope: boolean
+  signOut?: () => void
 }) {
   const [displayName, setDisplayName] = useState(state.displayName)
   const [districtDraft, setDistrictDraft] = useState<District | null>()
@@ -196,7 +202,7 @@ export function SettingsPage({ state, update, demoKey, eraseAccount, usesDescope
           </Stack>
         </Paper>
       </div>
-      {usesDescope && <DigestSettings />}
+      {signOut && <DigestSettings signOut={signOut} />}
       {eraseAccount && (
         <Paper withBorder p="lg" className="account-removal">
           <Stack align="flex-start" gap="sm">

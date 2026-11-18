@@ -224,7 +224,7 @@ export function App({ state, start, commit, markAlbum, historyKey, sendMessage, 
             area === '/album' ? <AlbumPage state={state} update={update} markAlbum={markAlbum} /> :
             area === '/berichten' ? <MessagesPage state={state} threadId={path.split('/')[2]} demoKey={historyKey} update={update} sendMessage={sendMessage} /> :
             area === '/instellingen' ? <SettingsPage state={state} update={update} demoKey={historyKey}
-              eraseAccount={eraseAccount} usesDescope={!!hosted} /> :
+              eraseAccount={eraseAccount} usesDescope={!!hosted} signOut={hosted?.logout} /> :
             <EmptyState title="Deze pagina bestaat niet" action={<Button component="a" href="/ruilen">Ga naar Ruilen</Button>}>Je vindt alle beschikbare stickers bij Ruilen.</EmptyState>
           ) : area === '/ruilen' && hosted?.landing ? hosted.landing : hosted?.placeholder ? hosted.placeholder : authStopped ? (
             <EmptyState title="Proefaccount kon niet openen" action={<Button onClick={() => window.location.reload()}>Opnieuw proberen</Button>}>
