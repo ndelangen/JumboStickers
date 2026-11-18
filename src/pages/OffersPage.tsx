@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Avatar, Button, Group, Modal, Paper, Stack, Text, TextInput, Title } from '@mantine/core'
 import { ArrowRight, Check, HandHeart, Search, Settings2 } from 'lucide-react'
+import type { District } from '../../convex/districts'
+import { SearchDistrictsField } from '../DistrictFields'
 import { EmptyState, AlbumProgress, StatusStamp, StickerDetails, StickerNumber, PhotoCredit } from '../ui'
 import { interestLabel, myOffers, personFor, type DemoState, type Offer, type Update } from '../demo'
 import { matchesSticker, stickerFor } from '../catalog'
@@ -35,6 +37,9 @@ export function OffersPage({ state, update, navigate, signedIn }: {
   signedIn: boolean
 }) {
   const [filter, setFilter] = useState<Filter>('available')
+  const [districtOverride, setDistrictOverride] = useState<District[]>()
+  const districts = districtOverride ?? state.searchDistricts ?? []
+  const isBrowsing = filter === 'available' || filter === 'wanted'
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -51,6 +56,10 @@ export function OffersPage({ state, update, navigate, signedIn }: {
   const offers = state.offers.filter((offer) => {
     const sticker = stickerFor(offer.number)
     if (!sticker || !matchesSticker(sticker, search)) return false
+    if (isBrowsing && districts.length) {
+      const district = personFor(offer.owner, state).district
+      if (!district || !districts.includes(district)) return false
+    }
     switch (filter) {
       case 'mine': return offer.owner === 'me'
       case 'interest': return offer.interested.includes('me')
@@ -89,9 +98,12 @@ export function OffersPage({ state, update, navigate, signedIn }: {
             <Text c="dimmed" size="sm" aria-live="polite">{offers.length} {offers.length === 1 ? 'exemplaar' : 'exemplaren'}</Text>
           </div>
           <div className="browse-toolbar">
-            <TextInput aria-label="Zoek in het aanbod op nummer of naam" placeholder="Zoek op nummer of naam"
-              leftSection={<Search size={18} aria-hidden />}
-              value={search} onChange={(event) => setSearch(event.currentTarget.value)} />
+            <div className="browse-search">
+              <TextInput aria-label="Zoek in het aanbod op nummer of naam" placeholder="Zoek op nummer of naam"
+                leftSection={<Search size={18} aria-hidden />}
+                value={search} onChange={(event) => setSearch(event.currentTarget.value)} />
+              {isBrowsing && <SearchDistrictsField inOffers value={districts} onChange={setDistrictOverride} />}
+            </div>
             <div className="filter-buttons" role="group" aria-label="Filter het aanbod">
               {filters.map(({ id, label }) => (
                 <Button key={id} size="compact-sm" variant={filter === id ? 'filled' : 'subtle'}
@@ -126,7 +138,11 @@ export function OffersPage({ state, update, navigate, signedIn }: {
                       </div>}
                       <Group gap={8} className="offer-person" wrap="nowrap">
                         <Avatar size={34} color="ochre" aria-hidden>{owner.initials}</Avatar>
-                        <div><Text size="sm" fw={700}>{mine ? state.displayName : owner.name}</Text><Text size="sm" c="dimmed">{interestLabel(offer.interestCount ?? offer.interested.length)}</Text></div>
+                        <div>
+                          <Text size="sm" fw={700}>{owner.name}</Text>
+                          {owner.district && <Text size="sm" c="dimmed">{owner.district}</Text>}
+                          <Text size="sm" c="dimmed">{interestLabel(offer.interestCount ?? offer.interested.length)}</Text>
+                        </div>
                       </Group>
                       <Button fullWidth size="sm" variant={active ? 'light' : 'outline'} disabled={!mine && !!offer.promisedTo && !active}
                         leftSection={mine ? <Settings2 size={15} aria-hidden /> : active ? <Check size={15} aria-hidden /> : undefined}
@@ -141,7 +157,7 @@ export function OffersPage({ state, update, navigate, signedIn }: {
             </div>
           ) : (
             <EmptyState title={filter === 'mine' ? 'Nog geen dubbelen aangeboden' : 'Geen stickers gevonden'}>
-              {filter === 'mine' ? 'Zet een dubbel exemplaar in je album om het hier aan te bieden.' : 'Probeer een ander nummer of een andere selectie.'}
+              {filter === 'mine' ? 'Zet een dubbel exemplaar in je album om het hier aan te bieden.' : isBrowsing && districts.length ? 'Pas de wijken aan of wis het wijkfilter.' : 'Probeer een ander nummer of een andere selectie.'}
             </EmptyState>
           )}
         </section>

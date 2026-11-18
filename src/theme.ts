@@ -20,6 +20,8 @@ export const albumTheme = createTheme({
   components: {
     Button: { defaultProps: { size: 'md' } },
     TextInput: { defaultProps: { size: 'md' }, classNames: { input: styles.textInput } },
+    NativeSelect: { defaultProps: { size: 'md' }, classNames: { input: styles.textInput } },
+    MultiSelect: { defaultProps: { size: 'md' }, classNames: { input: styles.textInput } },
     SegmentedControl: { classNames: { root: styles.segmented } },
     Paper: { defaultProps: { radius: 'md' } },
   },
