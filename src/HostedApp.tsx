@@ -1,10 +1,10 @@
 import { AuthProvider, Descope, getRefreshToken, getSessionToken, useDescope, useSession } from '@descope/react-sdk'
-import { Alert, Button, Group, Loader, Paper, Stack, Text, TextInput } from '@mantine/core'
+import { Alert, Anchor, Button, Group, Loader, Paper, Stack, Text, TextInput } from '@mantine/core'
 import { ConvexProviderWithAuth, useConvexAuth, useMutation, useQuery, type ConvexReactClient } from 'convex/react'
 import { Mail } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../convex/_generated/api'
-import { App, FinishAccountRemoval } from './App'
+import { App, FinishAccountRemoval, PublicPolicyFallback } from './App'
 import { errorMessage, type Update } from './demo'
 import { EmptyState, PageHeading, PhotoCredit } from './ui'
 import { OfferCover } from './pages/OffersPage'
@@ -54,7 +54,7 @@ function Login({ flowId, onVerified }: { flowId: string, onVerified: () => void 
           <PageHeading title="Inloggen om te ruilen" />
           <Text>Vul je e-mailadres in. Je krijgt een link waarmee je meteen inlogt. Je hebt geen wachtwoord nodig.</Text>
           <Text>De mail komt van <strong>{sender}</strong>. De link werkt één keer en is vijf minuten geldig.</Text>
-          <Text size="sm" c="dimmed">Andere verzamelaars zien je e-mailadres nooit.</Text>
+          <Text size="sm" c="dimmed">Andere verzamelaars zien je e-mailadres nooit. Lees hoe we je gegevens gebruiken in de <Anchor href="/privacy">privacyverklaring</Anchor>.</Text>
           {failed ? <Alert color="red" title="Inloggen is niet gelukt">
             <Stack>
               <Text>Vraag een nieuwe inloglink aan als je link verlopen of al gebruikt is.</Text>
@@ -160,7 +160,9 @@ function HostedExchange({ flowId }: { flowId: string }) {
   }, [erasedId, logout, sameSession, subject])
 
   if (erasedId) {
-    if (session.isSessionLoading) return <Group className="loading" role="status"><Loader size="sm" /><Text>Even je sessie controleren…</Text></Group>
+    if (session.isSessionLoading) return <PublicPolicyFallback>
+      <Group className="loading" role="status"><Loader size="sm" /><Text>Even je sessie controleren…</Text></Group>
+    </PublicPolicyFallback>
     return <FinishAccountRemoval historyKey={`hosted:${erasedId}`} signOut={finishRemoval}
       donePath={subject && !sameSession ? '/instellingen' : undefined} />
   }
