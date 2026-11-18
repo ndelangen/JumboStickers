@@ -26,3 +26,4 @@ Via Instellingen kun je je Stickerruil-profiel en ruilgegevens wissen. De app wi
 Stel voor de privacyverklaring bij de productiebuild `VITE_PRIVACY_CONTROLLER_NAME` en `VITE_PRIVACY_CONTACT_EMAIL` in. De naam en het contactadres zijn zichtbaar voor bezoekers.
 
 De [foto van Zwolle](https://commons.wikimedia.org/wiki/File:Zwolle_Centrum.jpg) is van Deerpeter en valt onder [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+De deelkaart gebruikt een uitsnede van die foto en wordt onder dezelfde licentie gedeeld.
