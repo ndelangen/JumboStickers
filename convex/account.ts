@@ -91,7 +91,12 @@ export const purge = internalMutation({
     ])
     for (const message of messages) await ctx.db.delete('unreadMessages', message._id)
     for (const delivery of deliveries) await ctx.db.delete('messageDeliveries', delivery._id)
-    if (hasConversations || hasTrades || messages.length || deliveries.length) {
+    const [blockedBy, blocking] = await Promise.all([
+      ctx.db.query('messageBlocks').withIndex('by_blocked', (q) => q.eq('blocked', collector)).take(batchSize),
+      ctx.db.query('messageBlocks').withIndex('by_blocker_and_blocked', (q) => q.eq('blocker', collector)).take(batchSize),
+    ])
+    for (const block of [...blockedBy, ...blocking]) await ctx.db.delete('messageBlocks', block._id)
+    if (hasConversations || hasTrades || messages.length || deliveries.length || blockedBy.length || blocking.length) {
       await ctx.scheduler.runAfter(0, internal.account.purge, { collector })
     } else {
       await ctx.db.delete('collectors', collector)

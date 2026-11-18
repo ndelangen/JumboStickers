@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Accordion, Anchor, Avatar, Button, Group, Paper, Stack, Text, Textarea, Title } from '@mantine/core'
-import { ArrowLeft, ArrowUpRight, Send, Sticker as StickerIcon } from 'lucide-react'
-import { useQuery } from 'convex/react'
+import { Accordion, Anchor, Avatar, Button, Group, Modal, Paper, Stack, Text, Textarea, Title } from '@mantine/core'
+import { ArrowLeft, ArrowUpRight, Ban, Send, Sticker as StickerIcon } from 'lucide-react'
+import { useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { localHistory, saveLocalMessage, watchLocalHistory, type LocalMessage } from '../chatStorage'
 import { errorMessage, personFor, type DemoState, type SendMessage, type Thread, type Update } from '../demo'
@@ -15,6 +15,11 @@ export function MessagesPage({ state, threadId, demoKey, update, sendMessage }: 
   sendMessage?: SendMessage
 }) {
   const selected = useQuery(api.exchange.getConversation, sendMessage && threadId ? { threadId } : 'skip')
+  const setMessageBlock = useMutation(api.exchange.setMessageBlock)
+  const messaging = selected ? {
+    blocked: selected.blocked,
+    setBlocked: (blocked: boolean) => setMessageBlock({ threadId: selected.id, blocked }),
+  } : undefined
   const listed = state.threads.find((thread) => thread.id === threadId)
   const older = listed ? undefined : selected
   const active = listed ?? older
@@ -40,7 +45,7 @@ export function MessagesPage({ state, threadId, demoKey, update, sendMessage }: 
             })}
           </Paper>
           {active ? (
-            <Conversation key={active.id} state={viewState} thread={active} demoKey={demoKey} update={update} sendMessage={sendMessage} />
+            <Conversation key={active.id} state={viewState} thread={active} demoKey={demoKey} update={update} sendMessage={sendMessage} messaging={messaging} />
           ) : sendMessage && threadId && selected === undefined ? (
             <Text role="status">Gesprek laden…</Text>
           ) : (
@@ -65,6 +70,7 @@ export function MessagesPage({ state, threadId, demoKey, update, sendMessage }: 
               </>
             )}
             <Text mb="xs">We slaan de inhoud van je chatberichten tijdelijk op in onze database, zodat de ontvanger ze ook later kan openen. Zodra een bericht in de geopende chat van de ontvanger verschijnt en diens browser het heeft opgeslagen, verwijderen we het automatisch uit de actieve database.</Text>
+            <Text mb="xs">Je kunt per verzamelaar maximaal vijf ongelezen berichten tegelijk sturen. Ongelezen berichten vervallen na 30 dagen.</Text>
             <Text>De geschiedenis blijft staan in de browser waarin je het bericht verstuurt of leest. Je kunt die geschiedenis zelf wissen bij <Anchor href="/instellingen">Instellingen</Anchor>.</Text>
           </Accordion.Panel>
         </Accordion.Item>
@@ -73,13 +79,16 @@ export function MessagesPage({ state, threadId, demoKey, update, sendMessage }: 
   )
 }
 
-function Conversation({ state, thread, demoKey, update, sendMessage }: {
+function Conversation({ state, thread, demoKey, update, sendMessage, messaging }: {
   state: DemoState
   thread: Thread
   demoKey: string
   update: Update
   sendMessage?: SendMessage
+  messaging?: { blocked: boolean, setBlocked: (blocked: boolean) => Promise<null> }
 }) {
+  const [confirmBlock, setConfirmBlock] = useState(false)
+  const [savingBlock, setSavingBlock] = useState(false)
   const [local, setLocal] = useState<LocalMessage[]>([])
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
@@ -87,6 +96,7 @@ function Conversation({ state, thread, demoKey, update, sendMessage }: {
   const [exampleBusy, setExampleBusy] = useState(false)
   const [withdrawing, setWithdrawing] = useState(false)
   const [feedback, setFeedback] = useState('')
+  const pauseReading = confirmBlock || savingBlock || !!messaging?.blocked
   const scroller = useRef<HTMLDivElement>(null)
   const person = personFor(thread.person, state)
   const pending = useMemo(() => state.inbox.filter((message) => message.threadId === thread.id), [state.inbox, thread.id])
@@ -111,7 +121,7 @@ function Conversation({ state, thread, demoKey, update, sendMessage }: {
   }, [demoKey])
 
   useEffect(() => {
-    if (!pending.length || !scroller.current) return
+    if (pauseReading || !pending.length || !scroller.current) return
     const visible = new Set<string>()
     const reading = new Set<string>()
     const retries = new Map<string, number>()
@@ -159,7 +169,7 @@ function Conversation({ state, thread, demoKey, update, sendMessage }: {
       for (const retry of retries.values()) clearTimeout(retry)
       document.removeEventListener('visibilitychange', readVisible)
     }
-  }, [demoKey, pending, update])
+  }, [demoKey, pauseReading, pending, update])
 
   useEffect(() => {
     if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight
@@ -167,7 +177,7 @@ function Conversation({ state, thread, demoKey, update, sendMessage }: {
 
   async function send() {
     const text = draft.trim()
-    if (!text || sending) return
+    if (!text || sending || messaging?.blocked) return
     const message: LocalMessage = {
       id: crypto.randomUUID(), threadId: thread.id, direction: 'out', text, sentAt: Date.now(),
       ...(sendMessage ? { delivery: 'pending' } : {}),
@@ -210,15 +220,39 @@ function Conversation({ state, thread, demoKey, update, sendMessage }: {
     try { await deliverMessage(message) } finally { setSending(null) }
   }
 
+  async function changeBlock(blocked: boolean) {
+    if (!messaging || savingBlock) return
+    setSavingBlock(true)
+    setError('')
+    try {
+      await messaging.setBlocked(blocked)
+      setConfirmBlock(false)
+    } catch (cause) {
+      setError(errorMessage(cause))
+      setConfirmBlock(false)
+    } finally {
+      setSavingBlock(false)
+    }
+  }
+
   return (
     <Paper withBorder className="conversation">
       <header className="conversation-heading">
         <Anchor href="/berichten" className="back-to-threads"><ArrowLeft size={17} aria-hidden /> Gesprekken</Anchor>
         <Group gap={9} justify="space-between">
           <div><Title order={2}>{person.name}</Title><Text c="dimmed" size="sm">Sticker {thread.number}</Text></div>
-          {offer?.promisedTo ? <StatusStamp color="ochre">Beloofd</StatusStamp> : canWithdraw && (
-            <span className="interest-stamp"><StatusStamp>Interesse getoond</StatusStamp></span>
-          )}
+          <Group gap={8}>
+            {offer?.promisedTo ? <StatusStamp color="ochre">Beloofd</StatusStamp> : canWithdraw && (
+              <span className="interest-stamp"><StatusStamp>Interesse getoond</StatusStamp></span>
+            )}
+            {messaging && (messaging.blocked ? (
+              <Button size="compact-sm" variant="subtle" loading={savingBlock}
+                onClick={() => void changeBlock(false)}>Deblokkeren</Button>
+            ) : (
+              <Button size="compact-sm" variant="subtle" color="red" leftSection={<Ban size={15} aria-hidden />}
+                onClick={() => setConfirmBlock(true)}>Blokkeren</Button>
+            ))}
+          </Group>
         </Group>
       </header>
       <div className="bubbles" ref={scroller} role="log" aria-label={`Gesprek met ${person.name}`}>
@@ -229,7 +263,7 @@ function Conversation({ state, thread, demoKey, update, sendMessage }: {
           <div key={message.id} className={`bubble bubble--${message.direction}`} data-message-id={message.id}>
             <Text fw={700} size="xs" className="bubble-person">{message.direction === 'out' ? 'Jij' : person.name}</Text>
             <Text>{message.text}</Text>
-            {message.delivery === 'pending' && (
+            {message.delivery === 'pending' && !messaging?.blocked && (
               <Group gap="xs" mt={4}>
                 <Text size="xs">{sending === message.id ? 'Bezig met versturen…' : 'Verzending nog niet bevestigd'}</Text>
                 <Button size="compact-xs" variant="subtle" disabled={!!sending} onClick={() => void retry(message)}>Verstuur opnieuw</Button>
@@ -240,16 +274,18 @@ function Conversation({ state, thread, demoKey, update, sendMessage }: {
       </div>
       <Stack p="md" gap="xs">
         {error && <Text role="alert" c="red">{error}</Text>}
-        <form className="compose" onSubmit={(event) => { event.preventDefault(); void send() }}>
-          <Textarea aria-label="Bericht" placeholder="Schrijf een bericht" enterKeyHint="send" autosize minRows={1} maxRows={4}
-            maxLength={1000} value={draft} readOnly={!!sending} onChange={(event) => setDraft(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
-              event.preventDefault()
-              if (!event.repeat) event.currentTarget.form?.requestSubmit()
-            }} />
-          <Button type="submit" disabled={!draft.trim()} loading={!!sending} leftSection={<Send size={16} aria-hidden />}>Verstuur</Button>
-        </form>
+        {messaging?.blocked ? <Text role="status">Je hebt {person.name} geblokkeerd.</Text> : (
+          <form className="compose" onSubmit={(event) => { event.preventDefault(); void send() }}>
+            <Textarea aria-label="Bericht" placeholder="Schrijf een bericht" enterKeyHint="send" autosize minRows={1} maxRows={4}
+              maxLength={1000} value={draft} readOnly={!!sending} onChange={(event) => setDraft(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+                event.preventDefault()
+                if (!event.repeat) event.currentTarget.form?.requestSubmit()
+              }} />
+            <Button type="submit" disabled={!draft.trim()} loading={!!sending} leftSection={<Send size={16} aria-hidden />}>Verstuur</Button>
+          </form>
+        )}
         {!sendMessage && <Button variant="subtle" size="compact-sm" className="simulate-reply" loading={exampleBusy}
           rightSection={<ArrowUpRight size={15} aria-hidden />} onClick={async () => {
             setExampleBusy(true)
@@ -267,6 +303,17 @@ function Conversation({ state, thread, demoKey, update, sendMessage }: {
         )}
         {feedback && <Text role="status" c="dimmed">{feedback}</Text>}
       </Stack>
+      <Modal opened={confirmBlock} onClose={() => { if (!savingBlock) setConfirmBlock(false) }}
+        closeOnEscape={!savingBlock} closeOnClickOutside={!savingBlock} withCloseButton={!savingBlock}
+        centered title={`${person.name} blokkeren?`}>
+        <Stack>
+          <Text>We wissen alle ongelezen berichten van {person.name} uit je inbox. Jullie kunnen elkaar pas weer berichten sturen als je de blokkade opheft.</Text>
+          <Group justify="flex-end">
+            <Button variant="default" disabled={savingBlock} onClick={() => setConfirmBlock(false)}>Annuleren</Button>
+            <Button color="red" loading={savingBlock} onClick={() => void changeBlock(true)}>Blokkeren</Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Paper>
   )
 }

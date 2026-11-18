@@ -10,6 +10,9 @@ import { demoStateFields } from './schema'
 const peopleValidator = v.record(v.string(), v.object({ name: v.string(), wants: v.array(v.number()) }))
 const snapshotValidator = v.object({ ...demoStateFields, people: peopleValidator, collectorId: v.id('collectors') })
 const inboxLimit = 250
+const unreadPerSender = 5
+const unreadRetentionMs = 30 * 24 * 60 * 60 * 1000
+const expiryBatchSize = 500
 const localNetworkLimit = 3 * offerLimit
 const resendWindowMs = 24 * 60 * 60 * 1000
 
@@ -105,10 +108,33 @@ export const get = query({
   },
 })
 
+function messageBlock(ctx: QueryCtx | MutationCtx, blocker: Id<'collectors'>, blocked: Id<'collectors'>) {
+  return ctx.db.query('messageBlocks').withIndex('by_blocker_and_blocked',
+    (q) => q.eq('blocker', blocker).eq('blocked', blocked)).unique()
+}
+
+async function messagesFrom(ctx: MutationCtx, recipient: Id<'collectors'>, sender: Id<'collectors'>, limit: number) {
+  const messages = await ctx.db.query('unreadMessages').withIndex('by_recipient_and_sender',
+    (q) => q.eq('recipient', recipient).eq('sender', sender)).take(limit)
+  if (messages.length >= limit) return messages
+
+  // Messages saved before the sender index identify the sender through their conversation.
+  const legacy = await ctx.db.query('unreadMessages').withIndex('by_recipient_and_sender',
+    (q) => q.eq('recipient', recipient).eq('sender', undefined)).take(inboxLimit)
+  const conversations = await Promise.all([...new Set(legacy.map((message) => message.conversation))]
+    .map((id) => ctx.db.get('conversations', id)))
+  const shared = new Set(conversations.flatMap((thread) => {
+    if (!thread) return []
+    const other = thread.owner === recipient ? thread.requester : thread.requester === recipient ? thread.owner : null
+    return other === sender ? [thread._id] : []
+  }))
+  return [...messages, ...legacy.filter((message) => shared.has(message.conversation))].slice(0, limit)
+}
+
 export const getConversation = query({
   args: { threadId: v.string() },
   returns: v.union(v.null(), v.object({
-    id: v.id('conversations'), offerId: v.id('offers'), number: v.number(), person: v.id('collectors'), name: v.string(),
+    id: v.id('conversations'), offerId: v.id('offers'), number: v.number(), person: v.id('collectors'), name: v.string(), blocked: v.boolean(),
   })),
   handler: async (ctx, { threadId }) => {
     const me = await currentCollector(ctx)
@@ -117,7 +143,8 @@ export const getConversation = query({
     if (!me || !thread || (thread.owner !== me._id && thread.requester !== me._id)) return null
     const view = threadView(thread, me._id)
     const person = await ctx.db.get('collectors', view.person)
-    return person && !person.deleting ? { ...view, name: person.displayName } : null
+    if (!person || person.deleting) return null
+    return { ...view, name: person.displayName, blocked: !!await messageBlock(ctx, me._id, view.person) }
   },
 })
 
@@ -254,6 +281,31 @@ export const update = mutation({
   },
 })
 
+export const setMessageBlock = mutation({
+  args: { threadId: v.id('conversations'), blocked: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, { threadId, blocked }) => {
+    const me = await requireCollector(ctx)
+    const thread = await ctx.db.get('conversations', threadId)
+    if (!thread || (thread.owner !== me._id && thread.requester !== me._id)) {
+      throw new ConvexError('Dit gesprek is niet beschikbaar.')
+    }
+    const person = threadView(thread, me._id).person
+    const profile = await ctx.db.get('collectors', person)
+    if (!profile || profile.deleting) throw new ConvexError('Dit gesprek is niet beschikbaar.')
+    const existing = await messageBlock(ctx, me._id, person)
+    if (!blocked) {
+      if (existing) await ctx.db.delete('messageBlocks', existing._id)
+      return null
+    }
+    if (!existing) await ctx.db.insert('messageBlocks', { blocker: me._id, blocked: person })
+    for (const message of await messagesFrom(ctx, me._id, person, inboxLimit)) {
+      await ctx.db.delete('unreadMessages', message._id)
+    }
+    return null
+  },
+})
+
 export const send = mutation({
   args: { threadId: v.string(), clientId: v.string(), text: v.string(), composedAt: v.number() },
   returns: v.null(),
@@ -275,9 +327,17 @@ export const send = mutation({
     const recipient = conversation.owner === me._id ? conversation.requester : conversation.owner
     const collector = await ctx.db.get('collectors', recipient)
     if (!collector || collector.deleting) throw new ConvexError('Dit gesprek is niet beschikbaar.')
+    const [blockedByRecipient, blockedBySender] = await Promise.all([
+      messageBlock(ctx, recipient, me._id),
+      messageBlock(ctx, me._id, recipient),
+    ])
+    if (blockedByRecipient || blockedBySender) throw new ConvexError('Je kunt in dit gesprek geen berichten sturen.')
+    if ((await messagesFrom(ctx, recipient, me._id, unreadPerSender)).length >= unreadPerSender) {
+      throw new ConvexError('Je hebt al 5 ongelezen berichten bij deze verzamelaar. Wacht tot die je berichten heeft gelezen.')
+    }
     const queued = await ctx.db.query('unreadMessages').withIndex('by_recipient', (q) => q.eq('recipient', recipient)).take(inboxLimit)
     if (queued.length >= inboxLimit) throw new ConvexError('De inbox van deze verzamelaar zit vol. Probeer het later opnieuw.')
-    await ctx.db.insert('unreadMessages', { conversation: conversation._id, recipient, text: body })
+    await ctx.db.insert('unreadMessages', { conversation: conversation._id, recipient, sender: me._id, text: body })
     const delivery = await ctx.db.insert('messageDeliveries', { sender: me._id, clientId, conversation: conversation._id })
     await ctx.scheduler.runAfter(resendWindowMs + 60_000, internal.exchange.forgetDelivery, { delivery })
     return null
@@ -289,6 +349,19 @@ export const forgetDelivery = internalMutation({
   returns: v.null(),
   handler: async (ctx, { delivery }) => {
     if (await ctx.db.get('messageDeliveries', delivery)) await ctx.db.delete('messageDeliveries', delivery)
+    return null
+  },
+})
+
+export const expireUnreadMessages = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const cutoff = Date.now() - unreadRetentionMs
+    const expired = await ctx.db.query('unreadMessages').withIndex('by_creation_time',
+      (q) => q.lte('_creationTime', cutoff)).take(expiryBatchSize)
+    for (const message of expired) await ctx.db.delete('unreadMessages', message._id)
+    if (expired.length === expiryBatchSize) await ctx.scheduler.runAfter(0, internal.exchange.expireUnreadMessages, {})
     return null
   },
 })
