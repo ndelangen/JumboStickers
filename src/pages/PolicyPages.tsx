@@ -33,11 +33,12 @@ export function PrivacyPage() {
       </PolicySection>
       <PolicySection title="Inloggen, je album en ruilen">
         <Text>Als je een inloglink aanvraagt, gebruikt Descope je e-mailadres om de link te versturen en je inlogaccount te beheren. Andere verzamelaars zien je e-mailadres nooit. Je hebt een e-mailadres nodig om een account te maken en mee te ruilen.</Text>
-        <Text>Stickerruil bewaart je schermnaam, een inlogkenmerk, je album, je zoeklijst, je aanbod, je interesses en je ruilafspraken. Andere ingelogde verzamelaars zien je schermnaam bij je aanbod en in gesprekken met jou. Als je interesse toont in een sticker, ziet de aanbieder je schermnaam. Bij een mogelijke ruil kunnen we laten zien dat je een bepaalde sticker zoekt.</Text>
+        <Text>Stickerruil bewaart je schermnaam, een inlogkenmerk, je album, je zoeklijst, je aanbod, je interesses, je ruilafspraken en wie je in de chat hebt geblokkeerd. Andere ingelogde verzamelaars zien je schermnaam bij je aanbod en in gesprekken met jou. Als je interesse toont in een sticker, ziet de aanbieder je schermnaam. Bij een mogelijke ruil kunnen we laten zien dat je een bepaalde sticker zoekt.</Text>
         <Text>We gebruiken deze gegevens om de ruildienst uit te voeren die je vraagt. Onze diensten kunnen technische gegevens verwerken, zoals je IP-adres, om de site te leveren en te beveiligen. Voor beveiliging en misbruikpreventie steunen we op ons belang om de site veilig te houden.</Text>
       </PolicySection>
       <PolicySection title="Privéberichten">
         <Text>We bewaren berichttekst tijdelijk in onze database. Zodra de ontvanger het bericht in de geopende chat ziet en diens browser het heeft opgeslagen, verwijderen we de tekst automatisch uit de actieve database. Een ongelezen bericht vervalt na 30 dagen. We wissen het eerder als de ontvanger de afzender blokkeert of als een van jullie het Stickerruil-account verwijdert.</Text>
+        <Text>Als je iemand blokkeert, kunnen jullie elkaar geen nieuwe berichten sturen. We bewaren de blokkade totdat je die opheft of een van jullie het Stickerruil-account verwijdert.</Text>
         <Text>Om te voorkomen dat hetzelfde bericht twee keer wordt verzonden, bewaren we ongeveer één dag een verzendkenmerk zonder berichttekst. Gelezen en verzonden berichten blijven in de gebruikte browsers staan totdat de geschiedenis daar wordt gewist.</Text>
       </PolicySection>
       <PolicySection title="Cookies en browseropslag">
