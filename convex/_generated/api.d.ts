@@ -13,8 +13,10 @@ import type * as album from "../album.js";
 import type * as collectors from "../collectors.js";
 import type * as crons from "../crons.js";
 import type * as demo from "../demo.js";
+import type * as digest from "../digest.js";
 import type * as districts from "../districts.js";
 import type * as exchange from "../exchange.js";
+import type * as http from "../http.js";
 import type * as localIdentity from "../localIdentity.js";
 import type * as localOrigin from "../localOrigin.js";
 
@@ -30,8 +32,10 @@ declare const fullApi: ApiFromModules<{
   collectors: typeof collectors;
   crons: typeof crons;
   demo: typeof demo;
+  digest: typeof digest;
   districts: typeof districts;
   exchange: typeof exchange;
+  http: typeof http;
   localIdentity: typeof localIdentity;
   localOrigin: typeof localOrigin;
 }>;

@@ -1,8 +1,15 @@
-import { Badge, Button, Group, Paper, Progress, Text, Title } from '@mantine/core'
+import { Anchor, Badge, Button, Group, Paper, Progress, Text, Title } from '@mantine/core'
 import { ArrowRight, BookOpen, Sticker as StickerIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { albumSize, stickerFor } from './catalog'
 import type { DemoState } from './demo'
+
+export function BrandLink() {
+  return <Anchor href="/ruilen" className="brand" underline="never">
+    <span className="brand-sticker"><StickerIcon size={25} strokeWidth={1.8} aria-hidden /></span>
+    <span className="brand-title">Stickerruil Zwolle</span>
+  </Anchor>
+}
 
 export function PageHeading({ title, description, side }: { title: string; description?: string; side?: ReactNode }) {
   return (

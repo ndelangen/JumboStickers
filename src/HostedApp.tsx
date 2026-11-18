@@ -8,7 +8,7 @@ import { App, FinishAccountRemoval, PublicPolicyFallback } from './App'
 import type { Update } from './demo'
 import { SignupProfile } from './pages/AccountPages'
 import { EmptyState, PageHeading, PhotoCredit } from './ui'
-import { OfferCover } from './pages/OffersPage'
+import { OfferCover, requestedSticker } from './pages/OffersPage'
 
 type DescopeConfig = { projectId: string, baseUrl: string, flowId: string }
 const redirectPath = '/inloggen'
@@ -43,6 +43,8 @@ function hasMagicLink() {
 
 function Login({ flowId, onVerified }: { flowId: string, onVerified: () => void }) {
   const [failed, setFailed] = useState(false)
+  const number = requestedSticker()
+  const returnPath = number ? `${redirectPath}?sticker=${number}` : redirectPath
 
   return <>
     <section className="sign-in">
@@ -59,16 +61,16 @@ function Login({ flowId, onVerified }: { flowId: string, onVerified: () => void 
           {failed ? <Alert color="red" title="Inloggen is niet gelukt">
             <Stack>
               <Text>Vraag een nieuwe inloglink aan als je link verlopen of al gebruikt is.</Text>
-              <Button component="a" href={redirectPath} data-reload>Vraag een nieuwe link aan</Button>
+              <Button component="a" href={returnPath} data-reload>Vraag een nieuwe link aan</Button>
             </Stack>
           </Alert> : (
-            <Descope flowId={flowId} locale="nl" redirectUrl={location.origin + redirectPath}
+            <Descope flowId={flowId} locale="nl" redirectUrl={location.origin + returnPath}
               onSuccess={() => {
-                history.replaceState(history.state, '', redirectPath)
+                history.replaceState(history.state, '', returnPath)
                 onVerified()
               }}
               onError={() => {
-                history.replaceState(history.state, '', redirectPath)
+                history.replaceState(history.state, '', returnPath)
                 setFailed(true)
               }}
               errorTransformer={({ text }) => /verify token|expired|already used/i.test(text)
@@ -88,7 +90,8 @@ function HostedExchange({ flowId }: { flowId: string }) {
   const session = useSession()
   const { logout } = useDescope()
   const { isAuthenticated, isLoading } = useConvexAuth()
-  const state = useQuery(api.exchange.get, isAuthenticated ? {} : 'skip')
+  const sticker = requestedSticker()
+  const state = useQuery(api.exchange.get, isAuthenticated ? sticker ? { sticker: Number(sticker) } : {} : 'skip')
   const subject = session.claims?.sub
   const collectorId = state?.collectorId
   const register = useMutation(api.account.registerOwn)
@@ -154,8 +157,10 @@ function HostedExchange({ flowId }: { flowId: string }) {
     } catch { setLogoutError(true) }
   }
   const login = <Login flowId={flowId} onVerified={() => setCheckingLink(false)} />
+  const number = requestedSticker()
   const signIn = checkingLink ? login : state ? <EmptyState title="Je bent ingelogd"
-    action={<Button component="a" href="/album">Open mijn album</Button>}>Je kunt nu stickers ruilen.</EmptyState> :
+    action={number ? <Button component="a" href={`/ruilen?sticker=${number}#aanbod`} data-reload>Bekijk sticker {number}</Button> :
+      <Button component="a" href="/album">Open mijn album</Button>}>Je kunt nu stickers ruilen.</EmptyState> :
     state === null ? <SignupProfile register={register} /> :
     session.isSessionLoading || isLoading || isAuthenticated ?
       <Group className="loading" role="status"><Loader size="sm" /><Text>Even je account openen…</Text></Group> :
