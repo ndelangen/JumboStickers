@@ -44,6 +44,7 @@ export default defineSchema({
     digest: v.boolean(),
     album: v.record(v.string(), albumStatus),
     deleting: v.optional(v.boolean()),
+    unreadReminderSeen: v.optional(v.boolean()),
     localHistoryById: v.optional(v.boolean()),
   }).index('by_identity', ['identity']),
   offers: defineTable({
@@ -110,6 +111,8 @@ export default defineSchema({
     collector: v.id('collectors'),
     email: v.string(),
     unsubscribeToken: v.string(),
+    tradesEnabled: v.optional(v.boolean()),
+    unreadEnabled: v.optional(v.boolean()),
     lastSent: v.optional(v.string()),
   }).index('by_collector', ['collector']).index('by_unsubscribeToken', ['unsubscribeToken']).index('by_lastSent', ['lastSent']),
   digestRounds: defineTable({

@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Alert, Anchor, Button, Group, Modal, Paper, Stack, Switch, Text, TextInput, Title } from '@mantine/core'
 import { ArrowRight, Inbox, Mail, Trash2 } from 'lucide-react'
 import type { FunctionArgs } from 'convex/server'
@@ -67,31 +67,75 @@ function DigestSettings({ signOut }: { signOut: () => void }) {
   const subscribe = useMutation(api.digest.subscribe)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  if (!preferences?.available && !preferences?.subscribed) return null
+  const visible = !!(preferences?.available || preferences?.subscribed || preferences?.unreadSubscribed)
+  useEffect(() => {
+    if (visible && location.hash === '#mail-voor-berichten') {
+      const reminder = document.getElementById('mail-voor-berichten')
+      reminder?.scrollIntoView({ block: 'center' })
+      reminder?.focus({ preventScroll: true })
+    }
+  }, [visible])
+  if (!visible || !preferences) return null
 
-  return <Paper withBorder p="lg" className="account-removal">
+  const canEnable = preferences.available && preferences.verifiedEmail
+  async function setPreference(kind: 'trades' | 'unread', enabled: boolean) {
+    setBusy(true)
+    setError('')
+    try { await subscribe({ enabled, kind }) }
+    catch (cause) { setError(errorMessage(cause)) }
+    finally { setBusy(false) }
+  }
+
+  return <Paper withBorder p="lg" className="account-removal" id="mail-voor-berichten" tabIndex={-1}>
     <Stack gap="sm">
-      <Title order={2}>Dagelijkse ruilmail</Title>
+      <Title order={2}>Dagelijkse mail</Title>
       <Switch label="Mail me over nieuwe ruilkansen" checked={preferences.subscribed}
-        disabled={busy || (!preferences.verifiedEmail && !preferences.subscribed)}
+        disabled={busy || (!canEnable && !preferences.subscribed)}
         description="Om 16.00 uur, als er stickers vrij zijn die je zoekt en waar nog niemand om heeft gevraagd."
-        onChange={async (event) => {
-          const enabled = event.currentTarget.checked
-          setBusy(true)
-          setError('')
-          try { await subscribe({ enabled }) }
-          catch (cause) { setError(errorMessage(cause)) }
-          finally { setBusy(false) }
-        }} />
-      {!preferences.verifiedEmail && !preferences.subscribed && (
+        onChange={(event) => void setPreference('trades', event.currentTarget.checked)} />
+      <Switch label="Mail me over ongelezen berichten" checked={preferences.unreadSubscribed}
+        disabled={busy || (!canEnable && !preferences.unreadSubscribed)}
+        description="Om 16.00 uur, met het aantal ongelezen berichten en een link naar Berichten."
+        onChange={(event) => void setPreference('unread', event.currentTarget.checked)} />
+      <Text size="sm" c="dimmed">Staan beide opties aan? Dan bundelen we de ruilkansen en berichten in één mail.</Text>
+      {preferences.available && !preferences.verifiedEmail && (
         <Text size="sm">
           <Anchor component="button" type="button" size="inherit" underline="always" onClick={signOut}>Log opnieuw in</Anchor>
-          {' '}om ruilmails aan te zetten. Vraag daarna een nieuwe inloglink aan met hetzelfde e-mailadres.
+          {' '}om dagelijkse mails aan te zetten. Vraag daarna een nieuwe inloglink aan met hetzelfde e-mailadres.
         </Text>
       )}
       {error && <Text role="alert" c="red">{error}</Text>}
     </Stack>
   </Paper>
+}
+
+export function UnreadReminderBanner() {
+  const preferences = useQuery(api.digest.preferences)
+  const claim = useMutation(api.digest.claimUnreadReminder)
+  const requested = useRef(false)
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    if (!preferences?.available || preferences.unreadReminderSeen || preferences.unreadSubscribed) return
+    function claimWhenVisible() {
+      if (requested.current || document.visibilityState !== 'visible') return
+      requested.current = true
+      void claim({}).then(setVisible, () => {})
+    }
+    claimWhenVisible()
+    document.addEventListener('visibilitychange', claimWhenVisible)
+    return () => document.removeEventListener('visibilitychange', claimWhenVisible)
+  }, [claim, preferences])
+  if (!visible || preferences?.unreadSubscribed) return null
+
+  return <Alert className="site-width" mt="md" color="olive" icon={<Mail size={20} aria-hidden />}
+    title="Nieuw op Stickerruil" withCloseButton closeButtonLabel="Sluit deze melding"
+    onClose={() => setVisible(false)}>
+    <Stack gap="xs" align="flex-start">
+      <Text size="sm">Wil je om 16.00 uur een seintje als er nog berichten op je wachten? Zet de herinnering aan in Instellingen.</Text>
+      <Button component="a" href="/instellingen#mail-voor-berichten" data-reload size="compact-sm" variant="light"
+        onClick={() => setVisible(false)}>Naar mailinstellingen</Button>
+    </Stack>
+  </Alert>
 }
 
 export function SignupProfile({ register }: {

@@ -5,10 +5,11 @@ function doPost(event) {
   try { mail = JSON.parse(event.postData.contents) } catch { return reply('denied') }
   const store = PropertiesService.getScriptProperties()
   const secret = store.getProperty('DIGEST_MAILER_SECRET')
+  const subjects = ['Nieuwe ruilkansen in Zwolle', 'Ongelezen berichten op Stickerruil Zwolle', 'Je dagelijkse overzicht van Stickerruil Zwolle']
   if (!secret || !mail || mail.secret !== secret ||
       typeof mail.id !== 'string' || !/^[a-z0-9]{20,60}$/u.test(mail.id) ||
       typeof mail.recipient !== 'string' || !/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/u.test(mail.recipient) ||
-      mail.subject !== 'Nieuwe ruilkansen in Zwolle' || typeof mail.body !== 'string' || mail.body.length > 20000 ||
+      !subjects.includes(mail.subject) || typeof mail.body !== 'string' || mail.body.length > 20000 ||
       (mail.htmlBody !== undefined && (typeof mail.htmlBody !== 'string' || mail.htmlBody.length > 30000))) {
     return reply('denied')
   }
