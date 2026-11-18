@@ -1,5 +1,5 @@
-// Korte titels op basis van de bijschriften in Zwolle: De Stad Ontrafeld.
-// Per sticker: nummer, gedrukte boekpagina, titel.
+// Short titles based on the captions in Zwolle: De Stad Ontrafeld.
+// Each sticker entry contains its number, printed page number, and title.
 export const catalogData: readonly (readonly [number: number, page: number, title: string])[] = [
   [1, 5, "Kaart van het Zwarte Water (ca. 1729)"],
   [2, 5, "Knooppunt Stadshagen uit de lucht (2025)"],

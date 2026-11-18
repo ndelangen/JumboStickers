@@ -111,7 +111,7 @@ function HostedExchange({ flowId }: { flowId: string }) {
   }, [])
 
   const eraseAccount = async () => {
-    if (!collectorId || !subject) throw new Error('Open Instellingen opnieuw voordat je je account verwijdert.')
+    if (!collectorId || !subject) throw new Error('Account removal requires a collector ID and session subject.')
     const pending = { collectorId, subject, committed: false }
     localStorage.setItem(removalStorageKey, JSON.stringify(pending))
     setRemoval(pending)

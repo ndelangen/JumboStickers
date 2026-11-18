@@ -1,13 +1,13 @@
-# Ruilmail instellen
+# Set up trade emails
 
-Gebruik een apart gratis Gmail-account voor Stickerruil Zwolle.
+Use a separate free Gmail account for Stickerruil Zwolle.
 
-1. Open Google Apps Script met dat account. Voeg `Code.gs` en `appsscript.json` uit deze map toe aan het project.
-2. Maak een willekeurig geheim met `openssl rand -hex 32`. Sla het op als `DIGEST_MAILER_SECRET` bij de scripteigenschappen en in de Convex-omgeving.
-3. Implementeer het script als web-app. Laat die uitvoeren als de Gmail-accounteigenaar en kies **Iedereen** als toegangsniveau. Het script controleert het geheim voordat het mail verstuurt. [Web-apps in Apps Script](https://developers.google.com/apps-script/guides/web)
-4. Zorg dat de Descope-sessie de claims `email` en `email_verified` meegeeft. Gebruik het geverifieerde adres van de ingelogde gebruiker en een booleaanse waarde voor `email_verified`. [Custom claims in Descope](https://docs.descope.com/flows/actions/custom-claims)
-5. Vul de `/exec`-URL in als `DIGEST_MAILER_URL` in Convex. Zet `DIGEST_SITE_URL` op het HTTPS-adres van de webapp zonder slash aan het eind. Zodra deze instellingen en het geheim aanwezig zijn, kunnen gebruikers ruilmail aanzetten.
+1. Open Google Apps Script with that account. Add `Code.gs` and `appsscript.json` from this directory to the project.
+2. Generate a random secret with `openssl rand -hex 32`. Save it as `DIGEST_MAILER_SECRET` in the Apps Script properties and the Convex environment.
+3. Deploy the script as a web app. Set it to run as the Gmail account owner and grant access to **Anyone**. The script checks the secret before sending mail. [Apps Script web apps](https://developers.google.com/apps-script/guides/web)
+4. Include the `email` and `email_verified` claims in the Descope session. Use the signed-in user's verified address and a boolean for `email_verified`. [Descope custom claims](https://docs.descope.com/flows/actions/custom-claims)
+5. Set `DIGEST_MAILER_URL` to the `/exec` URL in Convex. Set `DIGEST_SITE_URL` to the web app's HTTPS URL without a trailing slash. Once both URLs and the secret are set, users can turn on trade emails.
 
-Publiceer `/afmelden` op datzelfde HTTPS-adres voordat je ruilmail inschakelt. Gebruikers bevestigen hun afmelding daar zonder in te loggen.
+Publish `/afmelden` on the same HTTPS origin before enabling trade emails. Users can confirm that they want to unsubscribe without signing in.
 
-Controleer eerst op de testdeployment of een proefgebruiker zich kan aanmelden, een mail voor een beschikbare sticker kan krijgen en zich via die mail kan afmelden. Apps Script geeft persoonlijke Gmail-accounts een daglimiet van 100 ontvangers. Bij een onduidelijke verzenduitkomst probeert de app dezelfde mail niet opnieuw te sturen. [Apps Script-quota](https://developers.google.com/apps-script/guides/services/quotas)
+On the test deployment, check that a test user can sign in, receive a trade email for an available sticker, and unsubscribe through the link in that email. Apps Script limits personal Gmail accounts to 100 recipients per day. The app suppresses retries when it cannot confirm the send outcome. [Apps Script quotas](https://developers.google.com/apps-script/guides/services/quotas)
