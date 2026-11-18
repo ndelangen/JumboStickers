@@ -4,7 +4,9 @@ import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import { internalAction, internalMutation, internalQuery, mutation, query, type QueryCtx } from './_generated/server'
 import { currentCollector, isDescopeSession, requireCollector } from './collectors'
-import { isUnsubscribeToken, unsubscribePath } from '../shared/digestLinks'
+import { inboxLimit, unreadRetentionMs } from './inbox'
+import { composeDigest } from './digestMail'
+import { isUnsubscribeToken } from '../shared/digestLinks'
 
 const timezone = 'Europe/Amsterdam'
 const pageSize = 10
@@ -38,34 +40,64 @@ function localParts(time: number) {
 
 export const preferences = query({
   args: {},
-  returns: v.object({ available: v.boolean(), subscribed: v.boolean(), verifiedEmail: v.boolean() }),
+  returns: v.object({
+    available: v.boolean(), subscribed: v.boolean(), unreadSubscribed: v.boolean(),
+    unreadReminderSeen: v.boolean(), verifiedEmail: v.boolean(),
+  }),
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity()
     const collector = await currentCollector(ctx)
     const subscription = collector && await ctx.db.query('digestSubscriptions')
       .withIndex('by_collector', (q) => q.eq('collector', collector._id)).unique()
-    return { available: !!settings(), subscribed: !!subscription, verifiedEmail: !!(identity && emailFor(identity)) }
+    return {
+      available: !!settings(), subscribed: !!subscription && subscription.tradesEnabled !== false,
+      unreadSubscribed: subscription?.unreadEnabled === true, unreadReminderSeen: collector?.unreadReminderSeen === true,
+      verifiedEmail: !!(identity && emailFor(identity)),
+    }
   },
 })
 
 export const subscribe = mutation({
-  args: { enabled: v.boolean() },
+  args: { enabled: v.boolean(), kind: v.optional(v.union(v.literal('trades'), v.literal('unread'))) },
   returns: v.null(),
-  handler: async (ctx, { enabled }) => {
+  handler: async (ctx, { enabled, kind = 'trades' }) => {
     const collector = await requireCollector(ctx)
     const subscription = await ctx.db.query('digestSubscriptions')
       .withIndex('by_collector', (q) => q.eq('collector', collector._id)).unique()
-    if (!enabled) {
+    const tradesEnabled = kind === 'trades' ? enabled : !!subscription && subscription.tradesEnabled !== false
+    const unreadEnabled = kind === 'unread' ? enabled : subscription?.unreadEnabled === true
+    if (!tradesEnabled && !unreadEnabled) {
       if (subscription) await ctx.db.delete('digestSubscriptions', subscription._id)
       return null
     }
-    if (!settings()) throw new ConvexError('Ruilmails zijn nog niet beschikbaar.')
-    const identity = await ctx.auth.getUserIdentity()
-    const email = identity && emailFor(identity)
+    let email = subscription?.email
+    if (enabled) {
+      if (!settings()) throw new ConvexError('Dagelijkse mails zijn nog niet beschikbaar.')
+      const identity = await ctx.auth.getUserIdentity()
+      email = (identity && emailFor(identity)) ?? undefined
+    }
     if (!email) throw new ConvexError('Log opnieuw in met een link uit je e-mail.')
-    if (subscription) await ctx.db.patch('digestSubscriptions', subscription._id, { email })
-    else await ctx.db.insert('digestSubscriptions', { collector: collector._id, email, unsubscribeToken: crypto.randomUUID() })
+    if (subscription) {
+      const unsubscribeToken = tradesEnabled && subscription.tradesEnabled === false ? crypto.randomUUID() : subscription.unsubscribeToken
+      await ctx.db.patch('digestSubscriptions', subscription._id, { email, tradesEnabled, unreadEnabled, unsubscribeToken })
+    } else {
+      await ctx.db.insert('digestSubscriptions', { collector: collector._id, email, tradesEnabled, unreadEnabled, unsubscribeToken: crypto.randomUUID() })
+    }
+    if (kind === 'unread' && enabled && !collector.unreadReminderSeen) {
+      await ctx.db.patch('collectors', collector._id, { unreadReminderSeen: true })
+    }
     return null
+  },
+})
+
+export const claimUnreadReminder = mutation({
+  args: {},
+  returns: v.boolean(),
+  handler: async (ctx) => {
+    const collector = await requireCollector(ctx)
+    if (!settings() || collector.unreadReminderSeen) return false
+    await ctx.db.patch('collectors', collector._id, { unreadReminderSeen: true })
+    return true
   },
 })
 
@@ -76,8 +108,10 @@ export const unsubscribe = mutation({
   handler: async (ctx, { token }) => {
     if (!isUnsubscribeToken(token)) return false
     const row = await ctx.db.query('digestSubscriptions').withIndex('by_unsubscribeToken', (q) => q.eq('unsubscribeToken', token)).unique()
-    if (row) await ctx.db.delete('digestSubscriptions', row._id)
-    return !!row
+    if (!row || row.tradesEnabled === false) return false
+    if (row.unreadEnabled) await ctx.db.patch('digestSubscriptions', row._id, { tradesEnabled: false })
+    else await ctx.db.delete('digestSubscriptions', row._id)
+    return true
   },
 })
 
@@ -142,7 +176,8 @@ export const candidates = internalQuery({
   })),
   handler: async (ctx, { subscription, date, pagination }) => {
     const contact = await ctx.db.get('digestSubscriptions', subscription)
-    const collector = contact && await ctx.db.get('collectors', contact.collector)
+    if (!contact || contact.tradesEnabled === false) return null
+    const collector = await ctx.db.get('collectors', contact.collector)
     if (!collector || collector.deleting) return null
     if (await ctx.db.query('digestAttempts').withIndex('by_collector_and_date', (q) =>
       q.eq('collector', collector._id).eq('date', date)).unique()) return null
@@ -166,8 +201,28 @@ const delivery = v.object({
   email: v.string(),
   unsubscribeToken: v.string(),
   numbers: v.array(v.number()),
+  unreadCount: v.number(),
   notices: v.array(v.id('digestNotices')),
 })
+
+async function countUnread(ctx: Pick<QueryCtx, 'db'>, recipient: Id<'collectors'>) {
+  const cutoff = Date.now() - unreadRetentionMs
+  const messages = await ctx.db.query('unreadMessages').withIndex('by_recipient', (q) =>
+    q.eq('recipient', recipient).gt('_creationTime', cutoff)).take(inboxLimit)
+  const conversations = await Promise.all([...new Set(messages.map(({ conversation }) => conversation))]
+    .map((id) => ctx.db.get('conversations', id)))
+  const sendersByConversation = new Map(conversations.flatMap((conversation) => {
+    if (!conversation) return []
+    if (conversation.owner === recipient && !conversation.ownerHidden) return [[conversation._id, conversation.requester] as const]
+    return conversation.requester === recipient && !conversation.requesterHidden ? [[conversation._id, conversation.owner] as const] : []
+  }))
+  const senders = await Promise.all([...new Set(sendersByConversation.values())].map((id) => ctx.db.get('collectors', id)))
+  const active = new Set(senders.flatMap((sender) => sender && !sender.deleting ? [sender._id] : []))
+  return messages.filter(({ conversation }) => {
+    const sender = sendersByConversation.get(conversation)
+    return sender && active.has(sender)
+  }).length
+}
 
 export const reserve = internalMutation({
   args: { subscription: v.id('digestSubscriptions'), round: v.id('digestRounds'), offers: v.array(v.id('offers')) },
@@ -182,18 +237,19 @@ export const reserve = internalMutation({
       q.eq('collector', collector._id).eq('date', current.date)).unique()) return null
     const matches: Doc<'offers'>[] = []
     const seen = new Set<number>()
-    for (const id of offers) {
+    for (const id of contact.tradesEnabled === false ? [] : offers) {
       const offer = await ctx.db.get('offers', id)
       if (!offer || seen.has(offer.number) || !await eligible(ctx, collector, offer)) continue
       seen.add(offer.number)
       matches.push(offer)
     }
-    if (!matches.length) return null
+    const unreadCount = contact.unreadEnabled ? await countUnread(ctx, collector._id) : 0
+    if (!matches.length && !unreadCount) return null
     const id = await ctx.db.insert('digestAttempts', { collector: collector._id, date: current.date })
     await ctx.db.patch('digestRounds', round, { dispatched: current.dispatched + 1 })
     await ctx.scheduler.runAfter(twoDays, internal.digest.expireAttempt, { id })
     const notices = await Promise.all(matches.map(({ _id }) => ctx.db.insert('digestNotices', { collector: collector._id, offer: _id })))
-    return { id, email: contact.email, unsubscribeToken: contact.unsubscribeToken, numbers: matches.map(({ number }) => number), notices }
+    return { id, email: contact.email, unsubscribeToken: contact.unsubscribeToken, numbers: matches.map(({ number }) => number), unreadCount, notices }
   },
 })
 
@@ -254,27 +310,20 @@ export const deliverPage = internalAction({
           if (candidates.done || offers.size >= candidates.wanted) break
           cursor = candidates.cursor
         }
-        if (!offers.size || !inWindow()) continue
+        if (!inWindow()) continue
         const message = await ctx.runMutation(internal.digest.reserve, { subscription, round, offers: [...offers.values()] })
         if (!message) continue
-        const intro = 'Voor deze stickers die je zoekt is een exemplaar vrij waar nog niemand om heeft gevraagd.'
-        const unsubscribeUrl = `${config.site}${unsubscribePath}#${message.unsubscribeToken}`
-        const links = message.numbers.sort((a, b) => a - b).map((number) => ({
-          label: `Sticker ${number}`,
-          href: `${config.site}/ruilen?sticker=${number}#aanbod`,
-        }))
-        const body = [intro, '', ...links.map(({ label, href }) => `${label}: ${href}`), '', `Afmelden voor ruilmails: ${unsubscribeUrl}`].join('\n')
-        const htmlBody = `<p>${intro}</p><ul>${links.map(({ label, href }) => `<li><a href="${href}">${label}</a></li>`).join('')}</ul><p><a href="${unsubscribeUrl}">Afmelden voor ruilmails</a></p>`
+        const content = composeDigest(config.site, message)
         const response = await fetch(config.url, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ secret: config.secret, id: message.id, recipient: message.email, subject: 'Nieuwe ruilkansen in Zwolle', body, htmlBody }),
+          body: JSON.stringify({ secret: config.secret, id: message.id, recipient: message.email, ...content }),
           signal: AbortSignal.timeout(15_000),
         })
         if (!response.ok) continue
         const result = await response.json() as { status?: string }
         if (result.status === 'quota' || result.status === 'denied') {
           await ctx.runMutation(internal.digest.release, { notices: message.notices })
-          if (result.status === 'denied') console.error('The trade email service rejected the request.')
+          if (result.status === 'denied') console.error('The daily email service rejected the request.')
           await ctx.runMutation(internal.digest.advance, { round, previous: page.previous, cursor: page.cursor, done: true })
           return null
         }
@@ -283,7 +332,7 @@ export const deliverPage = internalAction({
         }
       } catch {
         // MailApp has no delivery lookup. Keep reservations when the outcome is unknown.
-        console.error('Could not process the trade email or confirm it was sent.')
+        console.error('Could not process the daily email or confirm it was sent.')
       }
     }
     await ctx.runMutation(internal.digest.advance, { round, previous: page.previous, cursor: page.cursor, done: page.done })

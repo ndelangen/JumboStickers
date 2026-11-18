@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from '../convex/_generated/api'
 import { App, FinishAccountRemoval, PublicPolicyFallback } from './App'
 import type { Update } from './demo'
-import { SignupProfile } from './pages/AccountPages'
+import { SignupProfile, UnreadReminderBanner } from './pages/AccountPages'
 import { EmptyState, PageHeading, PhotoCredit } from './ui'
 import { OfferCover, requestedSticker } from './pages/OffersPage'
 
@@ -41,10 +41,17 @@ function hasMagicLink() {
   return query.has('t') || query.has('descope-login-flow') || query.has('code')
 }
 
+function wantsInbox() {
+  return location.pathname === '/berichten' ||
+    (location.pathname === redirectPath && new URLSearchParams(location.search).get('na') === 'berichten')
+}
+
+const inboxLoginPath = `${redirectPath}?na=berichten`
+
 function Login({ flowId, onVerified }: { flowId: string, onVerified: () => void }) {
   const [failed, setFailed] = useState(false)
   const number = requestedSticker()
-  const returnPath = number ? `${redirectPath}?sticker=${number}` : redirectPath
+  const returnPath = wantsInbox() ? inboxLoginPath : number ? `${redirectPath}?sticker=${number}` : redirectPath
 
   return <>
     <section className="sign-in">
@@ -158,7 +165,8 @@ function HostedExchange({ flowId }: { flowId: string }) {
   const login = <Login flowId={flowId} onVerified={() => setCheckingLink(false)} />
   const number = requestedSticker()
   const signIn = checkingLink ? login : state ? <EmptyState title="Je bent ingelogd"
-    action={number ? <Button component="a" href={`/ruilen?sticker=${number}#aanbod`} data-reload>Bekijk sticker {number}</Button> :
+    action={wantsInbox() ? <Button component="a" href="/berichten">Bekijk mijn berichten</Button> :
+      number ? <Button component="a" href={`/ruilen?sticker=${number}#aanbod`} data-reload>Bekijk sticker {number}</Button> :
       <Button component="a" href="/album">Open mijn album</Button>}>Je kunt nu stickers ruilen.</EmptyState> :
     state === null ? <SignupProfile register={register} /> :
     session.isSessionLoading || isLoading || isAuthenticated ?
@@ -169,10 +177,13 @@ function HostedExchange({ flowId }: { flowId: string }) {
   return <App state={state} commit={update} markAlbum={markAlbum} historyKey={state ? `hosted:${state.collectorId}` : ''}
     sendMessage={state ? sendMessage : undefined} eraseAccount={state ? eraseAccount : undefined}
     hosted={{ signIn, landing: !isLoading && !session.isSessionLoading && !session.isAuthenticated ?
-      <><OfferCover signedIn={false} /><PhotoCredit /></> : undefined, notice: logoutError ? <Alert className="app-error" role="alert" color="red">
+      <><OfferCover signedIn={false} /><PhotoCredit /></> : undefined, notice: <>
+      {state && session.isAuthenticated && <UnreadReminderBanner key={state.collectorId} />}
+      {logoutError && <Alert className="app-error" role="alert" color="red">
       Uitloggen is niet gelukt. Probeer het opnieuw.
-    </Alert> : undefined, placeholder: isAuthenticated || isLoading ? signIn : <EmptyState title="Ruil mee met Stickerruil Zwolle"
-      action={<Button component="a" href={redirectPath}>Ik wil ook stickers ruilen</Button>}>Log in met een eenmalige link in je e-mail.</EmptyState>,
+    </Alert>}</>, placeholder: isAuthenticated || isLoading ? signIn : <EmptyState title="Ruil mee met Stickerruil Zwolle"
+      action={wantsInbox() ? <Button component="a" href={inboxLoginPath} data-reload>Inloggen om berichten te lezen</Button> :
+        <Button component="a" href={redirectPath}>Ik wil ook stickers ruilen</Button>}>Log in met een eenmalige link in je e-mail.</EmptyState>,
     logout: session.isAuthenticated ? () => void signOut() : undefined }} />
 }
 

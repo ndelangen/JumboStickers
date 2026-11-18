@@ -3,6 +3,7 @@ import type { Doc, Id, TableNames } from './_generated/dataModel'
 import { internal } from './_generated/api'
 import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
 import { batchAlbumArgs, offerLimit, validNumbers } from './album'
+import { inboxLimit, unreadRetentionMs } from './inbox'
 import { exchangeCommand } from './demo'
 import { currentCollector, requireCollector } from './collectors'
 import { demoStateFields } from './schema'
@@ -14,9 +15,7 @@ const peopleValidator = v.record(v.string(), v.object({
   district: v.optional(districtValidator),
 }))
 const snapshotValidator = v.object({ ...demoStateFields, people: peopleValidator, collectorId: v.id('collectors') })
-const inboxLimit = 250
 const unreadPerSender = 5
-const unreadRetentionMs = 30 * 24 * 60 * 60 * 1000
 const expiryBatchSize = 500
 const localNetworkLimit = 3 * offerLimit
 const resendWindowMs = 24 * 60 * 60 * 1000
