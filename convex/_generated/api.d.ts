@@ -8,7 +8,9 @@
  * @module
  */
 
+import type * as account from "../account.js";
 import type * as album from "../album.js";
+import type * as collectors from "../collectors.js";
 import type * as demo from "../demo.js";
 import type * as exchange from "../exchange.js";
 import type * as localIdentity from "../localIdentity.js";
@@ -21,7 +23,9 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  account: typeof account;
   album: typeof album;
+  collectors: typeof collectors;
   demo: typeof demo;
   exchange: typeof exchange;
   localIdentity: typeof localIdentity;

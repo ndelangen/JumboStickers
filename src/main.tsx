@@ -15,12 +15,12 @@ import { albumTheme, albumVariables } from './theme'
 const configured = import.meta.env.VITE_CONVEX_URL
 const local = /^http:\/\/(?:127\.0\.0\.1|localhost):\d+\/?$/u.test(configured ?? '') ? configured : null
 const client = local ? new ConvexReactClient(local) : null
-const account = local ? selectedAccount() : null
+const account = local ? selectedAccount(local) : null
 
 const app = client && local
   ? account ? (
     <LocalAccountsProvider client={client} fetchAccessToken={localAuthProvider(local, account)}>
-      <ExchangeApp account={account} />
+      <ExchangeApp selection={account} />
     </LocalAccountsProvider>
   ) : <ConvexProvider client={client}><DemoApp /></ConvexProvider>
   : <LocalSetup />

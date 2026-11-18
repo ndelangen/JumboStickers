@@ -12,7 +12,12 @@ const filters = [
 ] as const
 type Filter = (typeof filters)[number]['id']
 
-export function OffersPage({ state, update, navigate }: { state: DemoState; update: Update; navigate: (path: string) => void }) {
+export function OffersPage({ state, update, navigate, signedIn }: {
+  state: DemoState
+  update: Update
+  navigate: (path: string) => void
+  signedIn: boolean
+}) {
   const [filter, setFilter] = useState<Filter>('available')
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -63,7 +68,8 @@ export function OffersPage({ state, update, navigate }: { state: DemoState; upda
           <p className="cover-kicker">Zwolle · De Stad Ontrafeld</p>
           <Title order={1} id="cover-title" tabIndex={-1}>Maak je album<br />compleet</Title>
           <Text>Vind de stickers die je nog zoekt en ruil je dubbelen met andere verzamelaars.</Text>
-          <Button component="a" href="#aanbod" color="ochre.4" c="dark.9" rightSection={<ArrowRight size={18} aria-hidden />}>Bekijk de stickers</Button>
+          <Button component="a" href={signedIn ? '#aanbod' : '/inloggen'} color="ochre.4" c="dark.9"
+            rightSection={<ArrowRight size={18} aria-hidden />}>{signedIn ? 'Bekijk de stickers' : 'Ik wil ook stickers ruilen'}</Button>
         </div>
         <div className="cover-photo" role="img" aria-label="De Peperbus en de binnenstad van Zwolle" />
       </section>

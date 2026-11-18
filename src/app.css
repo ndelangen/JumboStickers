@@ -470,8 +470,9 @@ a:focus-visible {
 .chat-privacy .mantine-Accordion-item { background: var(--album-white); border-color: var(--album-border); }
 .chat-privacy .mantine-Accordion-control { font-weight: 700; }
 .settings-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; max-width: 920px; }
-.settings-layout .mantine-Paper-root { background: var(--album-white); border-color: var(--album-border); }
-.settings-layout h2 { font-size: 1.4rem; }
+.settings-layout .mantine-Paper-root, .account-removal { background: var(--album-white); border-color: var(--album-border); }
+.settings-layout h2, .account-removal h2 { font-size: 1.4rem; }
+.account-removal { max-width: 920px; margin-top: 16px; }
 
 .sign-in { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1fr); max-width: 840px; overflow: hidden; margin: 38px auto; border: 1px solid var(--album-border); border-radius: 14px; background: var(--album-white); box-shadow: 0 4px 20px #30261e14; }
 .sign-in-form { padding: 28px; background: var(--album-white); }

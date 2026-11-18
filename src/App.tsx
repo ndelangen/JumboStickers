@@ -4,7 +4,8 @@ import { ArrowLeftRight, BookOpen, MessageCircle, Settings, Sticker as StickerIc
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
 import { api } from '../convex/_generated/api'
 import { errorMessage, localDemoKey, type BulkMark, type DemoState, type SendMessage, type Update } from './demo'
-import type { LocalAccount } from './LocalAccounts'
+import { clearLocalSession, type LocalSelection } from './LocalAccounts'
+import { retireLocalHistory } from './chatStorage'
 import { OffersPage } from './pages/OffersPage'
 import { AlbumPage } from './pages/AlbumPage'
 import { MessagesPage } from './pages/MessagesPage'
@@ -35,26 +36,56 @@ export function DemoApp() {
   return <App state={state} start={start} commit={update} markAlbum={markAlbum} historyKey={demoKey} />
 }
 
-export function ExchangeApp({ account }: { account: LocalAccount }) {
+export function ExchangeApp({ selection }: { selection: LocalSelection }) {
   const { isLoading, isAuthenticated } = useConvexAuth()
   const state = useQuery(api.exchange.get, isAuthenticated ? {} : 'skip')
-  const initialize = useMutation(api.exchange.start)
   const mutate = useMutation(api.exchange.update)
   const markAlbum = useMutation(api.exchange.markAlbum)
   const sendMessage = useMutation(api.exchange.send)
-  const start = useCallback(() => initialize({}), [initialize])
+  const eraseAccount = useMutation(api.account.eraseOwn)
   const update = useCallback<Update>((command) => mutate({ command }), [mutate])
-  return <App state={state} start={start} commit={update} markAlbum={markAlbum}
-    sendMessage={sendMessage} historyKey={`local:${account}`} authStopped={!isLoading && !isAuthenticated} />
+  if (selection.session && (state === null || (!isLoading && selection.revoked))) {
+    return <FinishAccountRemoval historyKey={selection.session.historyKey} />
+  }
+  return <App state={state} commit={update} markAlbum={markAlbum} eraseAccount={eraseAccount}
+    sendMessage={sendMessage} historyKey={selection.session?.historyKey ?? `local:${selection.account}`}
+    authStopped={!isLoading && !isAuthenticated} />
 }
 
-function App({ state, start, commit, markAlbum, historyKey, sendMessage, authStopped = false }: {
+function FinishAccountRemoval({ historyKey }: { historyKey: string }) {
+  const [attempt, setAttempt] = useState(0)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    void retireLocalHistory(historyKey).then(() => {
+      if (!active) return
+      clearLocalSession()
+      location.replace('/inloggen?account=verwijderd')
+    }).catch(() => {
+      if (active) setFailed(true)
+    })
+    return () => { active = false }
+  }, [attempt, historyKey])
+
+  return <main className="site-width loading">
+    {failed ? (
+      <EmptyState title="Chatgeschiedenis wissen is niet gelukt" action={<Button onClick={() => {
+        setFailed(false)
+        setAttempt((value) => value + 1)
+      }}>Opnieuw proberen</Button>}>Je account is gesloten. Probeer de chatgeschiedenis in deze browser opnieuw te wissen.</EmptyState>
+    ) : <Group role="status"><Loader size="sm" /><Text>We wissen je chatgeschiedenis uit deze browser…</Text></Group>}
+  </main>
+}
+
+function App({ state, start, commit, markAlbum, historyKey, sendMessage, eraseAccount, authStopped = false }: {
   state: DemoState | null | undefined
-  start: () => Promise<null>
+  start?: () => Promise<null>
   commit: Update
   markAlbum: BulkMark
   historyKey: string
   sendMessage?: SendMessage
+  eraseAccount?: () => Promise<null>
   authStopped?: boolean
 }) {
   const [path, setPath] = useState(location.pathname)
@@ -66,7 +97,7 @@ function App({ state, start, commit, markAlbum, historyKey, sendMessage, authSto
   const unreadLabel = unread === 1 ? '1 ongelezen bericht' : `${unread} ongelezen berichten`
 
   useEffect(() => {
-    if (state !== null) return
+    if (state !== null || !start) return
     void start().catch((cause) => setError(errorMessage(cause)))
   }, [start, state])
 
@@ -146,7 +177,7 @@ function App({ state, start, commit, markAlbum, historyKey, sendMessage, authSto
       <div className="demo-strip">
         <div className="site-width">
           <Badge variant="light" color="ochre">{sendMessage ? `Proefaccount · ${state?.displayName ?? '…'}` : 'Voorbeeldgegevens'}</Badge>
-          <Anchor href="/inloggen" size="sm" fw={700}>{sendMessage ? 'Proefaccounts' : 'Inloggen'}</Anchor>
+          {sendMessage && <Anchor href="/inloggen" size="sm" fw={700}>Proefaccounts</Anchor>}
         </div>
       </div>
       {error && (
@@ -157,14 +188,14 @@ function App({ state, start, commit, markAlbum, historyKey, sendMessage, authSto
       <main className="site-width" id="inhoud" ref={content}>
         <div className="page-transition" key={area}>
           {area === '/inloggen' ? <SignInPage navigate={navigate} /> : state ? (
-            area === '/ruilen' ? <OffersPage state={state} update={update} navigate={navigate} /> :
+            area === '/ruilen' ? <OffersPage state={state} update={update} navigate={navigate} signedIn={!!sendMessage} /> :
             area === '/album' ? <AlbumPage state={state} update={update} markAlbum={markAlbum} /> :
             area === '/berichten' ? <MessagesPage state={state} threadId={path.split('/')[2]} demoKey={historyKey} update={update} sendMessage={sendMessage} /> :
-            area === '/instellingen' ? <SettingsPage state={state} update={update} demoKey={historyKey} /> :
+            area === '/instellingen' ? <SettingsPage state={state} update={update} demoKey={historyKey} eraseAccount={eraseAccount} /> :
             <EmptyState title="Deze pagina bestaat niet" action={<Button component="a" href="/ruilen">Ga naar Ruilen</Button>}>Je vindt alle beschikbare stickers bij Ruilen.</EmptyState>
           ) : authStopped ? (
             <EmptyState title="Proefaccount kon niet openen" action={<Button onClick={() => window.location.reload()}>Opnieuw proberen</Button>}>
-              <Anchor href="/inloggen">Terug naar inloggen</Anchor>
+              <Anchor href="/inloggen?proef=demo" data-reload>Terug naar inloggen</Anchor>
               Controleer of de lokale Convex-server draait.
             </EmptyState>
           ) : <Group className="loading" role="status"><Loader size="sm" /><Text>Even het album pakken…</Text></Group>}

@@ -2,12 +2,13 @@ import { useState } from 'react'
 import { Alert, Anchor, Button, Group, Modal, Paper, Stack, Switch, Text, TextInput, Title } from '@mantine/core'
 import { ArrowRight, Inbox, Mail, Trash2 } from 'lucide-react'
 import { clearLocalHistory } from '../chatStorage'
-import type { DemoState, Update } from '../demo'
+import { errorMessage, type DemoState, type Update } from '../demo'
 import { PageHeading, PhotoCredit } from '../ui'
 
 export function SignInPage({ navigate }: { navigate: (path: string) => void }) {
   const [email, setEmail] = useState('')
   const [requested, setRequested] = useState('')
+  const accountRemoved = new URLSearchParams(location.search).get('account') === 'verwijderd'
   return (
     <>
       <section className="sign-in">
@@ -15,19 +16,21 @@ export function SignInPage({ navigate }: { navigate: (path: string) => void }) {
         <Paper className="sign-in-form" radius={0} p="xl">
           <Stack>
             <div className="mail-sticker" aria-hidden>{requested ? <Inbox size={28} /> : <Mail size={28} />}</div>
-            <PageHeading title={requested ? 'Kijk in je inbox' : 'Inloggen'} />
+            {accountRemoved && <Alert color="olive" role="status">Je account is gesloten. We wissen je gegevens.</Alert>}
+            <PageHeading title={requested ? 'Kijk in je inbox' : 'Inloggen om te ruilen'} />
             {requested ? (
               <>
-                <Text>De inloglink gaat straks naar <strong>{requested}</strong>. Open de link binnen vijf minuten. Deel hem met niemand.</Text>
-                <Alert color="ochre">In deze proef wordt geen mail verstuurd. Bij livegang tonen we hier het exacte afzenderadres.</Alert>
+                <Text>Je inloglink gaat naar <strong>{requested}</strong>. Klik op de link en je bent meteen ingelogd.</Text>
+                <Alert color="ochre">In deze proef sturen we geen mail. Je kunt hieronder de voorbeeldlink openen.</Alert>
                 <Button rightSection={<ArrowRight size={18} aria-hidden />} onClick={() => navigate('/album')}>Open de voorbeeldlink</Button>
                 <Button variant="subtle" onClick={() => setRequested('')}>Gebruik een ander e-mailadres</Button>
               </>
             ) : (
               <form onSubmit={(event) => { event.preventDefault(); setRequested(email.trim()) }}>
                 <Stack>
-                  <Text>Vul je e-mailadres in. Je krijgt een link waarmee je één keer kunt inloggen.</Text>
+                  <Text>Je hoeft geen wachtwoord aan te maken. Vul je e-mailadres in en je krijgt een link waarmee je meteen inlogt.</Text>
                   <TextInput required label="E-mailadres" placeholder="naam@voorbeeld.nl" type="email" autoComplete="email"
+                    description="Andere verzamelaars zien je e-mailadres nooit."
                     value={email} onChange={(event) => setEmail(event.currentTarget.value)} />
                   <Button type="submit" leftSection={<Mail size={18} aria-hidden />}>Stuur mij een inloglink</Button>
                   <Text c="dimmed" size="sm">Je kunt dit uitproberen met een verzonnen adres.</Text>
@@ -53,13 +56,21 @@ export function SignInPage({ navigate }: { navigate: (path: string) => void }) {
   )
 }
 
-export function SettingsPage({ state, update, demoKey }: { state: DemoState; update: Update; demoKey: string }) {
+export function SettingsPage({ state, update, demoKey, eraseAccount }: {
+  state: DemoState
+  update: Update
+  demoKey: string
+  eraseAccount?: () => Promise<null>
+}) {
   const [displayName, setDisplayName] = useState(state.displayName)
   const [digest, setDigest] = useState(state.digest)
   const [busy, setBusy] = useState(false)
   const [confirm, setConfirm] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [error, setError] = useState('')
+  const [confirmRemoval, setConfirmRemoval] = useState(false)
+  const [removing, setRemoving] = useState(false)
+  const [removalError, setRemovalError] = useState('')
   return (
     <>
       <PageHeading title="Instellingen" />
@@ -95,6 +106,41 @@ export function SettingsPage({ state, update, demoKey }: { state: DemoState; upd
           </Stack>
         </Paper>
       </div>
+      {eraseAccount && (
+        <Paper withBorder p="lg" className="account-removal">
+          <Stack align="flex-start" gap="sm">
+            <Title order={2}>Je account verwijderen</Title>
+            <Text>Hiermee stop je met ruilen en verwijder je jouw gegevens.</Text>
+            <Button variant="outline" color="red" leftSection={<Trash2 size={17} aria-hidden />} onClick={() => {
+              setRemovalError('')
+              setConfirmRemoval(true)
+            }}>Verwijder mijn account</Button>
+          </Stack>
+        </Paper>
+      )}
+      {eraseAccount && (
+        <Modal opened={confirmRemoval} onClose={() => { if (!removing) setConfirmRemoval(false) }}
+          title="Je account definitief verwijderen?" closeButtonProps={{ 'aria-label': 'Sluit bevestiging' }}
+          withCloseButton={!removing} centered>
+          <Stack>
+            <Text>We wissen je profiel, album, aanbod, interesses, ruilafspraken en berichten op de server. We wissen ook je chatgeschiedenis in deze browser.</Text>
+            <Text>Berichten die iemand al in zijn eigen browser heeft opgeslagen, blijven daar staan. Je kunt deze actie niet ongedaan maken.</Text>
+            {removalError && <Text role="alert" c="red">{removalError}</Text>}
+            <Group>
+              <Button autoFocus variant="light" disabled={removing} onClick={() => setConfirmRemoval(false)}>Annuleren</Button>
+              <Button color="red" loading={removing} onClick={async () => {
+                setRemoving(true)
+                try {
+                  await eraseAccount()
+                } catch (cause) {
+                  setRemovalError(errorMessage(cause))
+                  setRemoving(false)
+                }
+              }}>Verwijder mijn account</Button>
+            </Group>
+          </Stack>
+        </Modal>
+      )}
       <Modal opened={confirm} onClose={() => setConfirm(false)} title="Chatgeschiedenis wissen?"
         closeButtonProps={{ 'aria-label': 'Sluit bevestiging' }} centered>
         <Stack>

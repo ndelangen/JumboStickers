@@ -37,6 +37,8 @@ export default defineSchema({
     displayName: v.string(),
     digest: v.boolean(),
     album: v.record(v.string(), albumStatus),
+    deleting: v.optional(v.boolean()),
+    localHistoryById: v.optional(v.boolean()),
   }).index('by_identity', ['identity']),
   offers: defineTable({
     owner: v.id('collectors'),
@@ -47,6 +49,7 @@ export default defineSchema({
   })
     .index('by_status', ['status'])
     .index('by_owner', ['owner'])
+    .index('by_promisedTo', ['promisedTo'])
     .index('by_owner_and_number', ['owner', 'number']),
   interests: defineTable({
     offer: v.id('offers'),
@@ -69,9 +72,10 @@ export default defineSchema({
     conversation: v.id('conversations'),
     recipient: v.id('collectors'),
     text: v.string(),
-  }).index('by_recipient', ['recipient']),
+  }).index('by_recipient', ['recipient']).index('by_conversation', ['conversation']),
   messageDeliveries: defineTable({
     sender: v.id('collectors'),
     clientId: v.string(),
-  }).index('by_sender_and_clientId', ['sender', 'clientId']),
+    conversation: v.optional(v.id('conversations')),
+  }).index('by_sender_and_clientId', ['sender', 'clientId']).index('by_conversation', ['conversation']),
 })

@@ -9,21 +9,46 @@ export type LocalMessage = {
 
 function openHistory(key: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(`stickerruil-voorbeeld-${key}`, 1)
-    request.onupgradeneeded = () => request.result.createObjectStore('messages', { keyPath: 'id' })
-    request.onsuccess = () => resolve(request.result)
+    const request = indexedDB.open(`stickerruil-voorbeeld-${key}`, 2)
+    let blocked = false
+    request.onupgradeneeded = (event) => {
+      if (event.oldVersion === 0) request.result.createObjectStore('messages', { keyPath: 'id' })
+      request.result.createObjectStore('status')
+    }
+    request.onblocked = () => {
+      blocked = true
+      reject(new Error('Chatgeschiedenis is nog in gebruik.'))
+    }
+    request.onsuccess = () => {
+      const database = request.result
+      database.onversionchange = () => database.close()
+      if (blocked) database.close()
+      else resolve(database)
+    }
     request.onerror = () => reject(request.error)
   })
 }
 
-async function readOrWrite<T>(key: string, mode: IDBTransactionMode, operation: (store: IDBObjectStore) => IDBRequest<T>) {
+async function readOrWrite<T>(key: string, mode: IDBTransactionMode,
+  operation: (messages: IDBObjectStore, status: IDBObjectStore) => IDBRequest<T>, requireActive = false) {
   const database = await openHistory(key)
   try {
     return await new Promise<T>((resolve, reject) => {
-      const transaction = database.transaction('messages', mode)
-      const request = operation(transaction.objectStore('messages'))
+      const transaction = database.transaction(['messages', 'status'], mode)
+      const messages = transaction.objectStore('messages')
+      const status = transaction.objectStore('status')
+      let request: IDBRequest<T>
+      if (requireActive) {
+        const retired = status.get('retired')
+        retired.onsuccess = () => {
+          if (retired.result) transaction.abort()
+          else request = operation(messages, status)
+        }
+      } else {
+        request = operation(messages, status)
+      }
       transaction.oncomplete = () => resolve(request.result)
-      transaction.onabort = () => reject(transaction.error)
+      transaction.onabort = () => reject(transaction.error ?? new Error('Deze chatgeschiedenis is gesloten.'))
       transaction.onerror = () => reject(transaction.error)
     })
   } finally {
@@ -36,12 +61,20 @@ export function localHistory(key: string): Promise<LocalMessage[]> {
 }
 
 export async function saveLocalMessage(key: string, message: LocalMessage) {
-  await readOrWrite(key, 'readwrite', (store) => store.put(message))
+  await readOrWrite(key, 'readwrite', (store) => store.put(message), true)
   notifyHistoryChanged(key)
 }
 
 export async function clearLocalHistory(key: string) {
   await readOrWrite(key, 'readwrite', (store) => store.clear())
+  notifyHistoryChanged(key)
+}
+
+export async function retireLocalHistory(key: string) {
+  await readOrWrite(key, 'readwrite', (messages, status) => {
+    status.put(true, 'retired')
+    return messages.clear()
+  })
   notifyHistoryChanged(key)
 }
 

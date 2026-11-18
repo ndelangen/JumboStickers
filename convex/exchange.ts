@@ -4,7 +4,7 @@ import { internal } from './_generated/api'
 import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
 import { albumLength, offerLimit, validNumbers } from './album'
 import { exchangeCommand } from './demo'
-import { localOrigin } from './localOrigin'
+import { currentCollector, requireCollector } from './collectors'
 import { albumStatus, demoStateFields } from './schema'
 
 const peopleValidator = v.record(v.string(), v.object({ name: v.string(), wants: v.array(v.number()) }))
@@ -12,17 +12,6 @@ const snapshotValidator = v.object({ ...demoStateFields, people: peopleValidator
 const inboxLimit = 250
 const localNetworkLimit = 3 * offerLimit
 const resendWindowMs = 24 * 60 * 60 * 1000
-
-async function collectorFor(ctx: QueryCtx | MutationCtx, identity: string) {
-  return await ctx.db.query('collectors').withIndex('by_identity', (q) => q.eq('identity', identity)).unique()
-}
-
-async function requireCollector(ctx: MutationCtx) {
-  const identity = await ctx.auth.getUserIdentity()
-  const collector = identity && await collectorFor(ctx, identity.tokenIdentifier)
-  if (!collector) throw new ConvexError('Log in om deze actie uit te voeren.')
-  return collector
-}
 
 function idFor<Table extends TableNames>(ctx: MutationCtx, table: Table, id: string) {
   const result = ctx.db.normalizeId(table, id)
@@ -43,34 +32,11 @@ function threadView(thread: Doc<'conversations'>, viewer: Id<'collectors'>) {
   }
 }
 
-export const start = mutation({
-  args: {},
-  returns: v.null(),
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity()
-    if (!identity) throw new ConvexError('Log in om je album te openen.')
-    if (await collectorFor(ctx, identity.tokenIdentifier)) return null
-
-    const persona = identity.issuer === localOrigin() ? identity.subject : null
-    const example = persona === 'local:noor' ? { wanted: 12, spare: 34 } :
-      persona === 'local:sam' ? { wanted: 34, spare: 12 } : null
-    const id = await ctx.db.insert('collectors', {
-      identity: identity.tokenIdentifier,
-      displayName: identity.name?.trim().slice(0, 32) || 'Verzamelaar',
-      digest: false,
-      album: example ? { [example.wanted]: 'wanted', [example.spare]: 'owned' } : {},
-    })
-    if (example) await ctx.db.insert('offers', { owner: id, number: example.spare, interestedCount: 0, status: 'available' })
-    return null
-  },
-})
-
 export const get = query({
   args: {},
   returns: v.union(snapshotValidator, v.null()),
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity()
-    const me = identity && await collectorFor(ctx, identity.tokenIdentifier)
+    const me = await currentCollector(ctx)
     if (!me) return null
 
     const [mine, available, fromMe, forMe, opened, received, inbox] = await Promise.all([
@@ -83,7 +49,7 @@ export const get = query({
       ctx.db.query('unreadMessages').withIndex('by_recipient', (q) => q.eq('recipient', me._id)).take(inboxLimit),
     ])
     const mineInterested = new Set(fromMe.map((item) => item.offer))
-    const receivedInterests = new Map<Id<'offers'>, string[]>()
+    const receivedInterests = new Map<Id<'offers'>, Id<'collectors'>[]>()
     for (const interest of forMe) {
       const people = receivedInterests.get(interest.offer) ?? []
       people.push(interest.collector)
@@ -98,16 +64,21 @@ export const get = query({
     for (const thread of await Promise.all(olderUnread.map((id) => ctx.db.get('conversations', id)))) {
       if (thread && (thread.owner === me._id || thread.requester === me._id)) threadMap.set(thread._id, thread)
     }
-    const threads = [...threadMap.values()].sort((a, b) => b._creationTime - a._creationTime).map((thread) => threadView(thread, me._id))
+    const candidates = [...threadMap.values()].sort((a, b) => b._creationTime - a._creationTime).map((thread) => threadView(thread, me._id))
 
     const ownAvailableNumbers = new Set(mine.filter((offer) => offer.status === 'available').map((offer) => offer.number))
     const related = new Set<Id<'collectors'>>([
       ...[...offers.values()].map((offer) => offer.owner),
       ...forMe.map((interest) => interest.collector),
-      ...threads.map((thread) => thread.person),
+      ...candidates.map((thread) => thread.person),
+      ...mine.flatMap((offer) => offer.promisedTo ? [offer.promisedTo] : []),
     ])
     related.delete(me._id)
-    const profiles = await Promise.all([...related].map((id) => ctx.db.get('collectors', id)))
+    const profiles = (await Promise.all([...related].map((id) => ctx.db.get('collectors', id))))
+      .filter((profile): profile is Doc<'collectors'> => !!profile && !profile.deleting)
+    const active = new Set(profiles.map((profile) => profile._id))
+    const threads = candidates.filter((thread) => active.has(thread.person))
+    const threadIds = new Set(threads.map((thread) => thread.id))
     return {
       displayName: me.displayName,
       digest: me.digest,
@@ -116,17 +87,19 @@ export const get = query({
         name: profile.displayName,
         wants: [...ownAvailableNumbers].filter((number) => profile.album[number] === 'wanted'),
       }]] : [])),
-      offers: [...offers.values()].map((offer) => ({
+      offers: [...offers.values()].filter((offer) => offer.owner === me._id || active.has(offer.owner)).map((offer) => ({
         id: offer._id,
         number: offer.number,
         owner: offer.owner === me._id ? 'me' : offer.owner,
-        interested: offer.owner === me._id ? receivedInterests.get(offer._id) ?? [] : mineInterested.has(offer._id) ? ['me'] : [],
+        interested: offer.owner === me._id ? (receivedInterests.get(offer._id) ?? []).filter((person) => active.has(person)) :
+          mineInterested.has(offer._id) ? ['me'] : [],
         interestCount: offer.interestedCount,
-        promisedTo: offer.promisedTo === me._id ? 'me' : offer.owner === me._id ? offer.promisedTo ?? null :
+        promisedTo: offer.promisedTo === me._id ? 'me' : offer.owner === me._id ? offer.promisedTo && active.has(offer.promisedTo) ? offer.promisedTo : null :
           offer.status === 'promised' ? 'reserved' : null,
       })),
       threads,
-      inbox: inbox.map((message) => ({ id: message._id, threadId: message.conversation, text: message.text, sentAt: message._creationTime })),
+      inbox: inbox.filter((message) => threadIds.has(message.conversation))
+        .map((message) => ({ id: message._id, threadId: message.conversation, text: message.text, sentAt: message._creationTime })),
     }
   },
 })
@@ -137,14 +110,13 @@ export const getConversation = query({
     id: v.id('conversations'), offerId: v.id('offers'), number: v.number(), person: v.id('collectors'), name: v.string(),
   })),
   handler: async (ctx, { threadId }) => {
-    const identity = await ctx.auth.getUserIdentity()
-    const me = identity && await collectorFor(ctx, identity.tokenIdentifier)
+    const me = await currentCollector(ctx)
     const id = ctx.db.normalizeId('conversations', threadId)
     const thread = id && await ctx.db.get('conversations', id)
     if (!me || !thread || (thread.owner !== me._id && thread.requester !== me._id)) return null
     const view = threadView(thread, me._id)
     const person = await ctx.db.get('collectors', view.person)
-    return { ...view, name: person?.displayName ?? 'Verzamelaar' }
+    return person && !person.deleting ? { ...view, name: person.displayName } : null
   },
 })
 
@@ -233,6 +205,8 @@ export const update = mutation({
     const offer = await ctx.db.get('offers', idFor(ctx, 'offers', command.offerId))
     if (!offer) throw new ConvexError('Dit exemplaar is niet meer beschikbaar.')
     if (command.type === 'want') {
+      const owner = await ctx.db.get('collectors', offer.owner)
+      if (!owner || owner.deleting) throw new ConvexError('Dit exemplaar is niet beschikbaar.')
       const interest = await interestFor(ctx, offer._id, me._id)
       if (offer.owner === me._id || (!interest && offer.status !== 'available')) throw new ConvexError('Dit exemplaar is niet beschikbaar.')
       if (!interest) {
@@ -257,7 +231,8 @@ export const update = mutation({
       throw new ConvexError('De afspraak is gewijzigd. Open het aanbod opnieuw.')
     }
     if (command.type === 'finish') {
-      if (offer.status !== 'promised') throw new ConvexError('Beloof het exemplaar eerst aan iemand.')
+      const recipient = offer.promisedTo && await ctx.db.get('collectors', offer.promisedTo)
+      if (!recipient || recipient.deleting) throw new ConvexError('De afspraak is gewijzigd. Open het aanbod opnieuw.')
       const interests = await ctx.db.query('interests').withIndex('by_offer_and_collector', (q) => q.eq('offer', offer._id)).take(localNetworkLimit)
       for (const interest of interests) await ctx.db.delete('interests', interest._id)
       await ctx.db.delete('offers', offer._id)
@@ -269,6 +244,8 @@ export const update = mutation({
     }
     if (command.person === null) return null
     const person = idFor(ctx, 'collectors', command.person)
+    const requester = await ctx.db.get('collectors', person)
+    if (!requester || requester.deleting) throw new ConvexError('Deze verzamelaar heeft geen interesse meer.')
     if (!await interestFor(ctx, offer._id, person)) throw new ConvexError('Deze verzamelaar heeft geen interesse meer.')
     if (command.type === 'openThread') return await conversationFor(ctx, offer, person)
     if (offer.status === 'promised') {
@@ -299,10 +276,12 @@ export const send = mutation({
       throw new ConvexError('Dit bericht is verlopen. Je kunt de tekst kopiëren naar een nieuw bericht.')
     }
     const recipient = conversation.owner === me._id ? conversation.requester : conversation.owner
+    const collector = await ctx.db.get('collectors', recipient)
+    if (!collector || collector.deleting) throw new ConvexError('Dit gesprek is niet beschikbaar.')
     const queued = await ctx.db.query('unreadMessages').withIndex('by_recipient', (q) => q.eq('recipient', recipient)).take(inboxLimit)
     if (queued.length >= inboxLimit) throw new ConvexError('De inbox van deze verzamelaar zit vol. Probeer het later opnieuw.')
     await ctx.db.insert('unreadMessages', { conversation: conversation._id, recipient, text: body })
-    const delivery = await ctx.db.insert('messageDeliveries', { sender: me._id, clientId })
+    const delivery = await ctx.db.insert('messageDeliveries', { sender: me._id, clientId, conversation: conversation._id })
     await ctx.scheduler.runAfter(resendWindowMs + 60_000, internal.exchange.forgetDelivery, { delivery })
     return null
   },
@@ -312,7 +291,7 @@ export const forgetDelivery = internalMutation({
   args: { delivery: v.id('messageDeliveries') },
   returns: v.null(),
   handler: async (ctx, { delivery }) => {
-    await ctx.db.delete('messageDeliveries', delivery)
+    if (await ctx.db.get('messageDeliveries', delivery)) await ctx.db.delete('messageDeliveries', delivery)
     return null
   },
 })
