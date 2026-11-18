@@ -4,6 +4,7 @@ import { internal } from './_generated/api'
 import { internalMutation, mutation, type MutationCtx } from './_generated/server'
 import { collectorByIdentity, currentCollector, isDescopeSession } from './collectors'
 import { localOrigin } from './localOrigin'
+import { districtValidator, searchDistrictsValidator, uniqueDistricts } from './districts'
 
 const batchSize = 100
 
@@ -45,9 +46,13 @@ async function purgeTrades(ctx: MutationCtx, collector: Id<'collectors'>) {
 }
 
 export const registerOwn = mutation({
-  args: { displayName: v.string() },
+  args: {
+    displayName: v.string(),
+    district: v.optional(districtValidator),
+    searchDistricts: v.optional(searchDistrictsValidator),
+  },
   returns: v.null(),
-  handler: async (ctx, { displayName }) => {
+  handler: async (ctx, { displayName, district, searchDistricts }) => {
     const identity = await ctx.auth.getUserIdentity()
     if (!identity || !isDescopeSession(identity)) throw new ConvexError('Log in via de link in je e-mail.')
     const existing = await collectorByIdentity(ctx, identity.tokenIdentifier)
@@ -55,7 +60,14 @@ export const registerOwn = mutation({
     if (existing) return null
     const name = displayName.trim()
     if (!name || name.length > 32) throw new ConvexError('Kies een schermnaam van maximaal 32 tekens.')
-    await ctx.db.insert('collectors', { identity: identity.tokenIdentifier, displayName: name, album: {}, digest: false })
+    await ctx.db.insert('collectors', {
+      identity: identity.tokenIdentifier,
+      displayName: name,
+      district,
+      searchDistricts: searchDistricts && uniqueDistricts(searchDistricts),
+      album: {},
+      digest: false,
+    })
     return null
   },
 })
@@ -73,7 +85,9 @@ export const eraseOwn = mutation({
     if ((expected && collector._id !== expected) || (!expected && identity.issuer !== localOrigin())) {
       throw new ConvexError('Je profiel is gewijzigd. Open Instellingen opnieuw.')
     }
-    await ctx.db.patch('collectors', collector._id, { deleting: true, displayName: '', album: {}, digest: false })
+    await ctx.db.patch('collectors', collector._id, {
+      deleting: true, displayName: '', district: undefined, searchDistricts: undefined, album: {}, digest: false,
+    })
     const subscription = await ctx.db.query('digestSubscriptions').withIndex('by_collector', (q) => q.eq('collector', collector._id)).unique()
     if (subscription) await ctx.db.delete('digestSubscriptions', subscription._id)
     await ctx.scheduler.runAfter(0, internal.account.purge, { collector: collector._id })

@@ -3,6 +3,9 @@ import { api } from '../../convex/_generated/api'
 import { useState } from 'react'
 import { Alert, Anchor, Button, Group, Modal, Paper, Stack, Switch, Text, TextInput, Title } from '@mantine/core'
 import { ArrowRight, Inbox, Mail, Trash2 } from 'lucide-react'
+import type { FunctionArgs } from 'convex/server'
+import type { District } from '../../convex/districts'
+import { HomeDistrictField, SearchDistrictsField } from '../DistrictFields'
 import { clearLocalHistory } from '../chatStorage'
 import { errorMessage, type DemoState, type Update } from '../demo'
 import { PageHeading, PhotoCredit } from '../ui'
@@ -85,6 +88,33 @@ function DigestSettings() {
   </Paper>
 }
 
+export function SignupProfile({ register }: {
+  register: (args: FunctionArgs<typeof api.account.registerOwn>) => Promise<null>
+}) {
+  const [name, setName] = useState('')
+  const [district, setDistrict] = useState<District | null>(null)
+  const [searchDistricts, setSearchDistricts] = useState<District[]>([])
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  return <Paper component="form" withBorder p="xl" className="local-accounts" onSubmit={async (event) => {
+    event.preventDefault()
+    setError('')
+    setSaving(true)
+    try { await register({ displayName: name, district: district ?? undefined, searchDistricts }) }
+    catch (cause) { setError(errorMessage(cause)) }
+    finally { setSaving(false) }
+  }}>
+    <Stack>
+      <PageHeading title="Maak je profiel aan" />
+      <TextInput label="Schermnaam" maxLength={32} required value={name} onChange={(event) => setName(event.currentTarget.value)} />
+      <HomeDistrictField label="In welke wijk woon je?" value={district} onChange={setDistrict} disabled={saving} />
+      <SearchDistrictsField value={searchDistricts} onChange={setSearchDistricts} disabled={saving} />
+      {error && <Text role="alert" c="red">{error}</Text>}
+      <Button type="submit" loading={saving} disabled={!name.trim()}>Verder naar Stickerruil</Button>
+    </Stack>
+  </Paper>
+}
+
 export function SettingsPage({ state, update, demoKey, eraseAccount, usesDescope }: {
   state: DemoState
   update: Update
@@ -93,6 +123,9 @@ export function SettingsPage({ state, update, demoKey, eraseAccount, usesDescope
   usesDescope: boolean
 }) {
   const [displayName, setDisplayName] = useState(state.displayName)
+  const [districtDraft, setDistrictDraft] = useState<District | null>()
+  const district = districtDraft === undefined ? state.district : districtDraft
+  const [searchDraft, setSearchDraft] = useState<District[]>()
   const [digest, setDigest] = useState(state.digest)
   const [busy, setBusy] = useState(false)
   const [confirm, setConfirm] = useState(false)
@@ -109,7 +142,13 @@ export function SettingsPage({ state, update, demoKey, eraseAccount, usesDescope
           event.preventDefault()
           setBusy(true)
           try {
-            await update({ type: 'profile', displayName, digest })
+            await update({
+              type: 'profile', displayName, digest,
+              ...(districtDraft === undefined ? {} : { district: districtDraft }),
+              ...(searchDraft === undefined ? {} : { searchDistricts: searchDraft }),
+            })
+            setDistrictDraft(undefined)
+            setSearchDraft(undefined)
             setFeedback('Je instellingen zijn opgeslagen.')
           } catch { /* App displays the error. */ } finally { setBusy(false) }
         }}>
@@ -117,6 +156,14 @@ export function SettingsPage({ state, update, demoKey, eraseAccount, usesDescope
             <Title order={2}>Je profiel</Title>
             <TextInput required label="Schermnaam" maxLength={32} value={displayName} onChange={(event) => {
               setDisplayName(event.currentTarget.value)
+              setFeedback('')
+            }} />
+            <HomeDistrictField value={district} disabled={busy} onChange={(value) => {
+              setDistrictDraft(value)
+              setFeedback('')
+            }} />
+            <SearchDistrictsField value={searchDraft ?? state.searchDistricts ?? []} disabled={busy} onChange={(value) => {
+              setSearchDraft(value)
               setFeedback('')
             }} />
             {!usesDescope && <Switch label="Mail me over nieuwe ruilkansen" checked={digest}

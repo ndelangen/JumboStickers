@@ -3,6 +3,7 @@ import { mutation, query } from './_generated/server'
 import { albumStatus, demoStateFields } from './schema'
 import { batchAlbumArgs, offerLimit, validNumbers } from './album'
 import { localOrigin } from './localOrigin'
+import { districtValidator, searchDistrictsValidator, uniqueDistricts } from './districts'
 
 const stateValidator = v.object(demoStateFields)
 type State = Infer<typeof stateValidator>
@@ -17,7 +18,13 @@ export const exchangeCommand = v.union(
   v.object({ type: v.literal('openThread'), offerId: v.string(), person: v.string() }),
   v.object({ type: v.literal('read'), messageId: v.string() }),
   v.object({ type: v.literal('exampleReply'), threadId: v.string() }),
-  v.object({ type: v.literal('profile'), displayName: v.string(), digest: v.boolean() }),
+  v.object({
+    type: v.literal('profile'),
+    displayName: v.string(),
+    digest: v.boolean(),
+    district: v.optional(v.union(districtValidator, v.null())),
+    searchDistricts: v.optional(searchDistrictsValidator),
+  }),
 )
 
 function verifyKey(key: string) {
@@ -52,8 +59,8 @@ export const get = query({
     verifyKey(key)
     const row = await ctx.db.query('demoAlbums').withIndex('by_key', (q) => q.eq('key', key)).unique()
     if (!row) return null
-    const { album, offers, threads, inbox, displayName, digest } = row
-    return { album, offers, threads, inbox, displayName, digest }
+    const { album, offers, threads, inbox, displayName, district, searchDistricts, digest } = row
+    return { album, offers, threads, inbox, displayName, district, searchDistricts, digest }
   },
 })
 
@@ -144,7 +151,12 @@ export const update = mutation({
     if (change.type === 'profile') {
       const displayName = change.displayName.trim()
       if (!displayName || displayName.length > 32) throw new ConvexError('Kies een naam van maximaal 32 tekens.')
-      await ctx.db.patch(row._id, { displayName, digest: change.digest })
+      await ctx.db.patch(row._id, {
+        displayName,
+        digest: change.digest,
+        ...(change.district === undefined ? {} : { district: change.district ?? undefined }),
+        ...(change.searchDistricts === undefined ? {} : { searchDistricts: uniqueDistricts(change.searchDistricts) }),
+      })
       return null
     }
 

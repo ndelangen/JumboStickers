@@ -129,7 +129,8 @@ async function eligible(ctx: Pick<QueryCtx, 'db'>, collector: Doc<'collectors'>,
   if (await ctx.db.query('digestNotices').withIndex('by_collector_and_offer', (q) =>
     q.eq('collector', collector._id).eq('offer', offer._id)).unique()) return false
   const owner = await ctx.db.get('collectors', offer.owner)
-  return !!owner && !owner.deleting
+  return !!owner && !owner.deleting &&
+    (!collector.searchDistricts?.length || (!!owner.district && collector.searchDistricts.includes(owner.district)))
 }
 
 export const candidates = internalQuery({

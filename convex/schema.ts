@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from 'convex/server'
 import { v } from 'convex/values'
+import { districtValidator, searchDistrictsValidator } from './districts'
 
 export const albumStatus = v.union(v.literal('wanted'), v.literal('owned'))
 
@@ -27,6 +28,8 @@ export const demoStateFields = {
   threads: v.array(thread),
   inbox: v.array(incoming),
   displayName: v.string(),
+  district: v.optional(districtValidator),
+  searchDistricts: v.optional(searchDistrictsValidator),
   digest: v.boolean(),
 }
 
@@ -35,6 +38,8 @@ export default defineSchema({
   collectors: defineTable({
     identity: v.string(),
     displayName: v.string(),
+    district: v.optional(districtValidator),
+    searchDistricts: v.optional(searchDistrictsValidator),
     digest: v.boolean(),
     album: v.record(v.string(), albumStatus),
     deleting: v.optional(v.boolean()),

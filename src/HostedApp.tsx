@@ -1,11 +1,12 @@
 import { AuthProvider, Descope, getRefreshToken, getSessionToken, useDescope, useSession } from '@descope/react-sdk'
-import { Alert, Anchor, Button, Group, Loader, Paper, Stack, Text, TextInput } from '@mantine/core'
+import { Alert, Anchor, Button, Group, Loader, Paper, Stack, Text } from '@mantine/core'
 import { ConvexProviderWithAuth, useConvexAuth, useMutation, useQuery, type ConvexReactClient } from 'convex/react'
 import { Mail } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../convex/_generated/api'
 import { App, FinishAccountRemoval, PublicPolicyFallback } from './App'
-import { errorMessage, type Update } from './demo'
+import type { Update } from './demo'
+import { SignupProfile } from './pages/AccountPages'
 import { EmptyState, PageHeading, PhotoCredit } from './ui'
 import { OfferCover, requestedSticker } from './pages/OffersPage'
 
@@ -82,29 +83,6 @@ function Login({ flowId, onVerified }: { flowId: string, onVerified: () => void 
   </>
 }
 
-function ChooseName() {
-  const register = useMutation(api.account.registerOwn)
-  const [name, setName] = useState('')
-  const [error, setError] = useState('')
-  const [saving, setSaving] = useState(false)
-  return <Paper component="form" withBorder p="xl" className="local-accounts" onSubmit={async (event) => {
-    event.preventDefault()
-    setError('')
-    setSaving(true)
-    try { await register({ displayName: name }) }
-    catch (cause) { setError(errorMessage(cause)) }
-    finally { setSaving(false) }
-  }}>
-    <Stack>
-      <PageHeading title="Kies je schermnaam" />
-      <Text>Je bent ingelogd. Andere verzamelaars zien alleen de naam die je hier kiest.</Text>
-      <TextInput label="Schermnaam" maxLength={32} required value={name} onChange={(event) => setName(event.currentTarget.value)} />
-      {error && <Text role="alert" c="red">{error}</Text>}
-      <Button type="submit" loading={saving} disabled={!name.trim()}>Verder naar Stickerruil</Button>
-    </Stack>
-  </Paper>
-}
-
 function HostedExchange({ flowId }: { flowId: string }) {
   const [checkingLink, setCheckingLink] = useState(hasMagicLink)
   const [logoutError, setLogoutError] = useState(false)
@@ -116,6 +94,7 @@ function HostedExchange({ flowId }: { flowId: string }) {
   const state = useQuery(api.exchange.get, isAuthenticated ? sticker ? { sticker: Number(sticker) } : {} : 'skip')
   const subject = session.claims?.sub
   const collectorId = state?.collectorId
+  const register = useMutation(api.account.registerOwn)
   const mutate = useMutation(api.exchange.update)
   const markAlbum = useMutation(api.exchange.markAlbum)
   const sendMessage = useMutation(api.exchange.send)
@@ -182,7 +161,7 @@ function HostedExchange({ flowId }: { flowId: string }) {
   const signIn = checkingLink ? login : state ? <EmptyState title="Je bent ingelogd"
     action={number ? <Button component="a" href={`/ruilen?sticker=${number}#aanbod`} data-reload>Bekijk sticker {number}</Button> :
       <Button component="a" href="/album">Open mijn album</Button>}>Je kunt nu stickers ruilen.</EmptyState> :
-    state === null ? <ChooseName /> :
+    state === null ? <SignupProfile register={register} /> :
     session.isSessionLoading || isLoading || isAuthenticated ?
       <Group className="loading" role="status"><Loader size="sm" /><Text>Even je account openen…</Text></Group> :
       session.isAuthenticated ? <EmptyState title="Je sessie kon niet worden geopend"
