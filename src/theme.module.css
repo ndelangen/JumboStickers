@@ -1,0 +1,12 @@
+.textInput {
+  border-color: var(--album-border);
+  background: var(--album-white);
+}
+
+.textInput:focus {
+  border-color: var(--album-olive);
+}
+
+.segmented {
+  background: #ede9db;
+}
