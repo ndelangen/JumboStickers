@@ -543,6 +543,8 @@ a:focus-visible {
 }
 
 .album-heading-actions { flex-shrink: 0; }
+.album-heading-actions .mantine-Button-root, .batch-confirm { height: auto; min-height: 40px; padding-block: 7px; }
+.album-heading-actions .mantine-Button-label, .batch-confirm .mantine-Button-label { white-space: normal; line-height: 1.2; }
 .collection-details {
   background: var(--album-white);
   border: 1px solid var(--album-border);
@@ -559,15 +561,14 @@ a:focus-visible {
 .collection-details .album-progress { border: 0; border-top: 1px solid var(--album-border); border-top-left-radius: 0; border-top-right-radius: 0; }
 .collection-actions { border-top: 1px solid var(--album-border); padding-top: 4px; }
 .collection-actions:empty { display: none; }
-.collection-only-action { align-self: flex-start; }
 
 @media (min-width: 721px) and (max-width: 1020px) {
   .page-heading:has(.album-heading-actions) { flex-direction: column; align-items: flex-start; }
 }
 
-@media (max-width: 440px) {
+@media (max-width: 560px) {
   .album-heading-actions { width: 100%; gap: 6px; }
-  .album-heading-actions .mantine-Button-root { flex: 1 1 auto; padding-inline: 9px; }
+  .album-heading-actions .mantine-Button-root { width: 100%; padding-inline: 9px; }
   .album-heading-actions .mantine-Button-section { margin-inline-end: 5px; }
 }
 .local-accounts {

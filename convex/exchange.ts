@@ -2,10 +2,10 @@ import { ConvexError, v } from 'convex/values'
 import type { Doc, Id, TableNames } from './_generated/dataModel'
 import { internal } from './_generated/api'
 import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } from './_generated/server'
-import { albumLength, offerLimit, validNumbers } from './album'
+import { batchAlbumArgs, offerLimit, validNumbers } from './album'
 import { exchangeCommand } from './demo'
 import { currentCollector, requireCollector } from './collectors'
-import { albumStatus, demoStateFields } from './schema'
+import { demoStateFields } from './schema'
 
 const peopleValidator = v.record(v.string(), v.object({ name: v.string(), wants: v.array(v.number()) }))
 const snapshotValidator = v.object({ ...demoStateFields, people: peopleValidator, collectorId: v.id('collectors') })
@@ -123,18 +123,17 @@ export const getConversation = query({
 
 type MarkStatus = 'wanted' | 'owned' | 'double' | 'clear'
 
-async function markNumbers(ctx: MutationCtx, me: Doc<'collectors'>, scope: 'all' | 'empty' | number[], status: MarkStatus, strict: boolean) {
+async function markNumbers(ctx: MutationCtx, me: Doc<'collectors'>, input: number[], status: MarkStatus, mode: 'edit' | 'batch') {
+  const numbers = validNumbers(input)
   const offers = await ownOffers(ctx, me._id)
   const offered = new Set(offers.map((offer) => offer.number))
-  const numbers = typeof scope === 'string' ? Array.from({ length: albumLength }, (_, index) => index + 1) : validNumbers(scope)
-  const candidates = scope === 'empty' ? numbers.filter((number) => !me.album[number]) : numbers
-  const protectedNumbers = status === 'wanted' || status === 'clear' ? candidates.filter((number) => offered.has(number)) : []
-  if (strict && protectedNumbers.length) {
+  const protectedNumbers = status === 'wanted' || status === 'clear' ? numbers.filter((number) => offered.has(number)) : []
+  if (mode === 'edit' && protectedNumbers.length) {
     throw new ConvexError(`Haal deze nummers eerst uit je aanbod: ${protectedNumbers.join(', ')}.`)
   }
 
-  const changed = candidates.filter((number) => {
-    if (status === 'double') return typeof scope !== 'string' || !offered.has(number)
+  const changed = numbers.filter((number) => {
+    if (status === 'double') return mode === 'edit' || !offered.has(number)
     if (status === 'clear') return !!me.album[number] && !offered.has(number)
     return me.album[number] !== status && (status !== 'wanted' || !offered.has(number))
   })
@@ -152,12 +151,9 @@ async function markNumbers(ctx: MutationCtx, me: Doc<'collectors'>, scope: 'all'
 }
 
 export const markAlbum = mutation({
-  args: {
-    scope: v.union(v.literal('all'), v.literal('empty'), v.array(v.number())),
-    status: v.union(albumStatus, v.literal('double')),
-  },
+  args: batchAlbumArgs,
   returns: v.object({ changed: v.number(), protectedCount: v.number() }),
-  handler: async (ctx, { scope, status }) => markNumbers(ctx, await requireCollector(ctx), scope, status, false),
+  handler: async (ctx, { scope, status }) => markNumbers(ctx, await requireCollector(ctx), scope, status, 'batch'),
 })
 
 async function conversationFor(ctx: MutationCtx, offer: Doc<'offers'>, requester: Id<'collectors'>) {
@@ -179,7 +175,7 @@ export const update = mutation({
     const me = await requireCollector(ctx)
 
     if (command.type === 'album') {
-      await markNumbers(ctx, me, command.numbers, command.status, true)
+      await markNumbers(ctx, me, command.numbers, command.status, 'edit')
       return null
     }
     if (command.type === 'profile') {
