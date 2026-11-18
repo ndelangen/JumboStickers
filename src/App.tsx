@@ -1,6 +1,6 @@
 import { Alert, Anchor, Badge, Button, Group, Loader, Paper, Text, Title, VisuallyHidden } from '@mantine/core'
 import { useConvexAuth, useMutation, useQuery } from 'convex/react'
-import { ArrowLeftRight, BookOpen, MessageCircle, Settings, Sticker as StickerIcon } from 'lucide-react'
+import { ArrowLeftRight, BookOpen, MessageCircle, Settings } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { api } from '../convex/_generated/api'
 import { errorMessage, localDemoKey, type BulkMark, type DemoState, type SendMessage, type Update } from './demo'
@@ -10,7 +10,7 @@ import { OffersPage } from './pages/OffersPage'
 import { AlbumPage } from './pages/AlbumPage'
 import { MessagesPage } from './pages/MessagesPage'
 import { SettingsPage, SignInPage } from './pages/AccountPages'
-import { EmptyState } from './ui'
+import { BrandLink, EmptyState } from './ui'
 import { useUnreadMessages } from './useUnreadMessages'
 
 const links = [
@@ -159,10 +159,7 @@ export function App({ state, start, commit, markAlbum, historyKey, sendMessage, 
       <a href="#inhoud" className="skip-link">Naar inhoud</a>
       <header className="site-header">
         <div className="site-width header-inner">
-          <Anchor href="/ruilen" className="brand" underline="never">
-            <span className="brand-sticker"><StickerIcon size={25} strokeWidth={1.8} aria-hidden /></span>
-            <span className="brand-title">Stickerruil Zwolle</span>
-          </Anchor>
+          <BrandLink />
           <nav aria-label="Hoofdnavigatie" className="site-nav">
             {links.map(({ href, label, icon: Icon }) => {
               const showUnread = href === '/berichten' && unread > 0

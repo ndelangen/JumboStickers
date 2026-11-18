@@ -8,4 +8,6 @@ Gebruik een apart gratis Gmail-account voor Stickerruil Zwolle.
 4. Zorg dat de Descope-sessie de claims `email` en `email_verified` meegeeft. Gebruik het geverifieerde adres van de ingelogde gebruiker en een booleaanse waarde voor `email_verified`. [Custom claims in Descope](https://docs.descope.com/flows/actions/custom-claims)
 5. Vul de `/exec`-URL in als `DIGEST_MAILER_URL` in Convex. Zet `DIGEST_SITE_URL` op het HTTPS-adres van de webapp zonder slash aan het eind. Zodra deze instellingen en het geheim aanwezig zijn, kunnen gebruikers ruilmail aanzetten.
 
+Publiceer `/afmelden` op datzelfde HTTPS-adres voordat je ruilmail inschakelt. Gebruikers bevestigen hun afmelding daar zonder in te loggen.
+
 Controleer eerst op de testdeployment of een proefgebruiker zich kan aanmelden, een mail voor een beschikbare sticker kan krijgen en zich via die mail kan afmelden. Apps Script geeft persoonlijke Gmail-accounts een daglimiet van 100 ontvangers. Bij een onduidelijke verzenduitkomst probeert de app dezelfde mail niet opnieuw te sturen. [Apps Script-quota](https://developers.google.com/apps-script/guides/services/quotas)

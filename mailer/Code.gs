@@ -8,7 +8,8 @@ function doPost(event) {
   if (!secret || !mail || mail.secret !== secret ||
       typeof mail.id !== 'string' || !/^[a-z0-9]{20,60}$/u.test(mail.id) ||
       typeof mail.recipient !== 'string' || !/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/u.test(mail.recipient) ||
-      mail.subject !== 'Nieuwe ruilkansen in Zwolle' || typeof mail.body !== 'string' || mail.body.length > 20000) {
+      mail.subject !== 'Nieuwe ruilkansen in Zwolle' || typeof mail.body !== 'string' || mail.body.length > 20000 ||
+      (mail.htmlBody !== undefined && (typeof mail.htmlBody !== 'string' || mail.htmlBody.length > 30000))) {
     return reply('denied')
   }
   const lock = LockService.getScriptLock()
@@ -24,7 +25,9 @@ function doPost(event) {
     if (MailApp.getRemainingDailyQuota() < 1) return reply('quota')
 
     store.setProperty(key, String(now))
-    MailApp.sendEmail({ to: mail.recipient, subject: mail.subject, body: mail.body, name: 'Stickerruil Zwolle' })
+    const message = { to: mail.recipient, subject: mail.subject, body: mail.body, name: 'Stickerruil Zwolle' }
+    if (mail.htmlBody) message.htmlBody = mail.htmlBody
+    MailApp.sendEmail(message)
     return reply('sent')
   } finally {
     lock.releaseLock()

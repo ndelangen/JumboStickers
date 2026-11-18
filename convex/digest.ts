@@ -4,6 +4,7 @@ import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
 import { internalAction, internalMutation, internalQuery, mutation, query, type QueryCtx } from './_generated/server'
 import { currentCollector, isDescopeSession, requireCollector } from './collectors'
+import { isUnsubscribeToken, unsubscribePath } from '../shared/digestLinks'
 
 const timezone = 'Europe/Amsterdam'
 const pageSize = 10
@@ -15,9 +16,8 @@ function settings() {
   const url = process.env.DIGEST_MAILER_URL
   const secret = process.env.DIGEST_MAILER_SECRET
   const site = process.env.DIGEST_SITE_URL
-  const backend = process.env.CONVEX_SITE_URL
   return url && senderPattern.test(url) && secret && secret.length >= 32 &&
-    site && /^https:\/\/[\w.-]+$/u.test(site) && backend ? { url, secret, site, backend } : null
+    site && /^https:\/\/[\w.-]+$/u.test(site) ? { url, secret, site } : null
 }
 
 function emailFor(identity: UserIdentity) {
@@ -67,10 +67,12 @@ export const subscribe = mutation({
   },
 })
 
-export const unsubscribe = internalMutation({
+// The random token in the email authorizes this single operation.
+export const unsubscribe = mutation({
   args: { token: v.string() },
   returns: v.boolean(),
   handler: async (ctx, { token }) => {
+    if (!isUnsubscribeToken(token)) return false
     const row = await ctx.db.query('digestSubscriptions').withIndex('by_unsubscribeToken', (q) => q.eq('unsubscribeToken', token)).unique()
     if (row) await ctx.db.delete('digestSubscriptions', row._id)
     return !!row
@@ -252,16 +254,17 @@ export const deliverPage = internalAction({
         if (!offers.size || !inWindow()) continue
         const message = await ctx.runMutation(internal.digest.reserve, { subscription, round, offers: [...offers.values()] })
         if (!message) continue
-        const body = [
-          'Deze stickers zoek je nog. Op dit moment is er een exemplaar vrij waar nog niemand om heeft gevraagd.',
-          '',
-          ...message.numbers.sort((a, b) => a - b).map((number) => `Sticker ${number}: ${config.site}/ruilen?sticker=${number}#aanbod`),
-          '',
-          `Afmelden voor ruilmails: ${config.backend}/ruilmail/afmelden?token=${message.unsubscribeToken}`,
-        ].join('\n')
+        const intro = 'Voor deze stickers die je zoekt is een exemplaar vrij waar nog niemand om heeft gevraagd.'
+        const afmelden = `${config.site}${unsubscribePath}#${message.unsubscribeToken}`
+        const links = message.numbers.sort((a, b) => a - b).map((number) => ({
+          label: `Sticker ${number}`,
+          href: `${config.site}/ruilen?sticker=${number}#aanbod`,
+        }))
+        const body = [intro, '', ...links.map(({ label, href }) => `${label}: ${href}`), '', `Afmelden voor ruilmails: ${afmelden}`].join('\n')
+        const htmlBody = `<p>${intro}</p><ul>${links.map(({ label, href }) => `<li><a href="${href}">${label}</a></li>`).join('')}</ul><p><a href="${afmelden}">Afmelden voor ruilmails</a></p>`
         const response = await fetch(config.url, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ secret: config.secret, id: message.id, recipient: message.email, subject: 'Nieuwe ruilkansen in Zwolle', body }),
+          body: JSON.stringify({ secret: config.secret, id: message.id, recipient: message.email, subject: 'Nieuwe ruilkansen in Zwolle', body, htmlBody }),
           signal: AbortSignal.timeout(15_000),
         })
         if (!response.ok) continue
