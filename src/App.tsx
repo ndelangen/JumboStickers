@@ -117,7 +117,7 @@ export function App() {
         <div className="page-transition" key={area}>
           {area === '/inloggen' ? <SignInPage navigate={navigate} /> : state ? (
             area === '/ruilen' ? <OffersPage state={state} update={update} navigate={navigate} /> :
-            area === '/album' ? <AlbumPage state={state} update={update} /> :
+            area === '/album' ? <AlbumPage state={state} update={update} demoKey={demoKey} /> :
             area === '/berichten' ? <MessagesPage state={state} threadId={path.split('/')[2]} demoKey={demoKey} update={update} /> :
             area === '/instellingen' ? <SettingsPage state={state} update={update} demoKey={demoKey} /> :
             <EmptyState title="Deze pagina bestaat niet" action={<Button component="a" href="/ruilen">Ga naar Ruilen</Button>}>Je vindt alle beschikbare stickers bij Ruilen.</EmptyState>

@@ -73,6 +73,54 @@ function threadWith(threads: State['threads'], offer: State['offers'][number], p
   return id
 }
 
+const albumLength = 175
+const offerLimit = 400
+
+function validNumbers(input: number[]) {
+  const numbers = [...new Set(input)]
+  if (!numbers.length || numbers.length > albumLength ||
+      numbers.some((number) => !Number.isInteger(number) || number < 1 || number > albumLength)) {
+    throw new ConvexError(`Gebruik stickernummers van 1 tot en met ${albumLength}.`)
+  }
+  return numbers
+}
+
+function newOffer(number: number): State['offers'][number] {
+  return { id: crypto.randomUUID(), number, owner: 'me', interested: [], promisedTo: null }
+}
+
+export const markAlbum = mutation({
+  args: {
+    key: v.string(),
+    scope: v.union(v.literal('all'), v.literal('empty'), v.array(v.number())),
+    status: v.union(albumStatus, v.literal('double')),
+  },
+  returns: v.object({ changed: v.number(), protectedCount: v.number() }),
+  handler: async (ctx, { key, scope, status }) => {
+    verifyKey(key)
+    const row = await ctx.db.query('demoAlbums').withIndex('by_key', (q) => q.eq('key', key)).unique()
+    if (!row) throw new ConvexError('Open de voorbeeldomgeving opnieuw.')
+    const { album, offers } = row
+    const offered = new Set(offers.filter((offer) => offer.owner === 'me').map((offer) => offer.number))
+    const numbers = typeof scope === 'string'
+      ? Array.from({ length: albumLength }, (_, index) => index + 1)
+      : validNumbers(scope)
+    const matching = scope === 'empty' ? numbers.filter((number) => !album[number] && !offered.has(number)) : numbers
+    const protectedCount = status === 'wanted' ? matching.filter((number) => offered.has(number)).length : 0
+    const changed = matching.filter((number) => {
+      if (status === 'double') return typeof scope !== 'string' || !offered.has(number)
+      return album[number] !== status && (status !== 'wanted' || !offered.has(number))
+    })
+    if (status === 'double' && offers.length + changed.length > offerLimit) {
+      throw new ConvexError('Je voorbeeldalbum zit vol.')
+    }
+    for (const number of changed) album[number] = status === 'double' ? 'owned' : status
+    if (status === 'double') offers.unshift(...changed.map(newOffer))
+    if (changed.length) await ctx.db.patch(row._id, { album, offers })
+    return { changed: changed.length, protectedCount }
+  },
+})
+
 export const update = mutation({
   args: { key: v.string(), command },
   returns: v.union(v.string(), v.null()),
@@ -84,21 +132,18 @@ export const update = mutation({
     let result: string | null = null
 
     if (change.type === 'album') {
-      const numbers = [...new Set(change.numbers)]
-      if (numbers.length > 175 || numbers.some((number) => !Number.isInteger(number) || number < 1 || number > 175)) {
-        throw new ConvexError('Gebruik stickernummers van 1 tot en met 175.')
-      }
+      const numbers = validNumbers(change.numbers)
       const doubles = new Set(offers.filter((offer) => offer.owner === 'me').map((offer) => offer.number))
       const stillOffered = numbers.filter((number) => doubles.has(number))
       if ((change.status === 'wanted' || change.status === 'clear') && stillOffered.length) {
         throw new ConvexError(`Haal deze nummers eerst uit je aanbod: ${stillOffered.join(', ')}.`)
       }
-      if (change.status === 'double' && offers.length + numbers.length > 400) throw new ConvexError('Je voorbeeldalbum zit vol.')
+      if (change.status === 'double' && offers.length + numbers.length > offerLimit) throw new ConvexError('Je voorbeeldalbum zit vol.')
       for (const number of numbers) {
         if (change.status === 'clear') delete album[number]
         else if (change.status === 'double') {
           album[number] = 'owned'
-          offers.unshift({ id: crypto.randomUUID(), number, owner: 'me', interested: [], promisedTo: null })
+          offers.unshift(newOffer(number))
         } else album[number] = change.status
       }
       await ctx.db.patch(row._id, { album, offers })

@@ -37,10 +37,6 @@ export function myOffers(state: DemoState, number?: number) {
   return state.offers.filter((offer) => offer.owner === 'me' && (number === undefined || offer.number === number))
 }
 
-export function copyLabel(count: number) {
-  return count === 1 ? '1 exemplaar' : `${count} exemplaren`
-}
-
 export function interestLabel(count: number) {
   return count === 1 ? '1 geïnteresseerde' : `${count} geïnteresseerden`
 }

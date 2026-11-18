@@ -366,8 +366,10 @@ a:focus-visible {
 .empty-icon { color: var(--album-olive); transform: rotate(-8deg); }
 .empty-state .mantine-Button-root { margin-top: 5px; }
 
-.album-layout { display: grid; grid-template-columns: minmax(0, 1fr) 255px; gap: 24px; align-items: start; }
-.album-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 9px; }
+.album-layout { display: grid; grid-template-columns: minmax(0, 1fr) 255px; grid-template-areas: "toolbar collection" "list collection"; column-gap: 24px; align-items: start; }
+.album-toolbar { grid-area: toolbar; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 9px; }
+.album-collection { grid-area: collection; }
+.album-list { grid-area: list; }
 .album-feedback { min-height: 26px; padding-top: 4px; }
 .album-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(81px, 1fr)); gap: 8px; }
 .album-cell {
@@ -388,7 +390,8 @@ a:focus-visible {
 .album-cell:active { transform: scale(.96); }
 .album-cell:focus-visible { outline: 3px solid var(--album-olive); outline-offset: 2px; }
 .album-cell strong { font: 700 1.5rem/1.05 var(--mantine-font-family-headings); }
-.album-cell[data-status='owned'] { background: #e8ebd4; border-style: solid; border-color: #b8be9b; }
+.album-cell[data-status='owned'] { background: #efeee4; border-style: solid; border-color: #d0cdbd; }
+.album-cell[data-status='owned'] .cell-state { color: var(--album-muted); font-weight: 600; }
 .album-cell[data-status='double'] { background: #dce5df; border-style: solid; border-color: #97ab9d; }
 .album-cell[data-status='wanted'] { background: #f6e8b7; border-color: #9d7e2b; }
 .cell-state { display: flex; align-items: center; justify-content: center; gap: 2px; font-weight: 700; font-size: .8rem; animation: stamp-in 240ms cubic-bezier(.2,.75,.35,1.15) both; }
@@ -447,7 +450,7 @@ a:focus-visible {
 .mail-sticker { display: grid; place-items: center; width: 53px; height: 49px; border: 1px dashed #664f22; outline: 3px solid var(--album-gold); background: var(--album-gold); color: #483411; border-radius: 5px; transform: rotate(-7deg); }
 
 @media (max-width: 1000px) {
-  .album-layout { grid-template-columns: minmax(0, 1fr) 210px; gap: 12px; }
+  .album-layout { grid-template-columns: minmax(0, 1fr) 210px; column-gap: 12px; }
   .browse-toolbar, .album-toolbar { display: grid; grid-template-columns: 1fr; }
 }
 
@@ -459,7 +462,7 @@ a:focus-visible {
   .demo-strip > div { gap: 3px; }
   .page-heading { align-items: flex-start; flex-direction: column; gap: 13px; margin-block: 24px 17px; }
   .page-heading p { font-size: 1.02rem; }
-  .album-layout { display: flex; flex-direction: column-reverse; align-items: stretch; }
+  .album-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "toolbar" "collection" "list"; row-gap: 8px; }
   .album-layout .album-progress { padding: 12px; }
   .album-grid { grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 6px; }
   .album-cell { min-height: 66px; }
@@ -496,4 +499,33 @@ a:focus-visible {
   }
 
   .album-cell:hover, .album-cell:active, .offer:hover .sticker-ticket, .offer:focus-within .sticker-ticket { transform: none; }
+}
+
+.album-heading-actions { flex-shrink: 0; }
+.collection-details {
+  background: var(--album-white);
+  border: 1px solid var(--album-border);
+  border-radius: var(--mantine-radius-md);
+}
+
+.collection-details summary {
+  padding: 10px 14px;
+  cursor: pointer;
+  color: var(--album-olive);
+  font-weight: 700;
+}
+
+.collection-details .album-progress { border: 0; border-top: 1px solid var(--album-border); border-top-left-radius: 0; border-top-right-radius: 0; }
+.collection-actions { border-top: 1px solid var(--album-border); padding-top: 4px; }
+.collection-actions:empty { display: none; }
+.collection-only-action { align-self: flex-start; }
+
+@media (min-width: 721px) and (max-width: 1020px) {
+  .page-heading:has(.album-heading-actions) { flex-direction: column; align-items: flex-start; }
+}
+
+@media (max-width: 440px) {
+  .album-heading-actions { width: 100%; gap: 6px; }
+  .album-heading-actions .mantine-Button-root { flex: 1 1 auto; padding-inline: 9px; }
+  .album-heading-actions .mantine-Button-section { margin-inline-end: 5px; }
 }

@@ -1,25 +1,29 @@
-import { useState } from 'react'
-import { ActionIcon, Button, Group, Modal, Paper, Stack, Text, TextInput, Title } from '@mantine/core'
-import { Check, ClipboardList, Minus, Plus, Search } from 'lucide-react'
-import { albumSize, catalog, copyLabel, errorMessage, myOffers, parseStickerNumbers, themeFor, type Command, type DemoState, type Update } from '../demo'
+import { useRef, useState } from 'react'
+import { Alert, Button, Group, Modal, SegmentedControl, Stack, Text, TextInput } from '@mantine/core'
+import { useMutation } from 'convex/react'
+import { ClipboardList, CopyPlus, ListChecks, Search } from 'lucide-react'
+import { api } from '../../convex/_generated/api'
+import { albumSize, catalog, errorMessage, myOffers, parseStickerNumbers, themeFor, type Command, type DemoState, type Update } from '../demo'
 import { AlbumProgress, EmptyState, PageHeading, StatusStamp } from '../ui'
 
 const filters = [
   { id: 'all', label: 'Alle stickers' }, { id: 'wanted', label: 'Zoek ik' },
-  { id: 'owned', label: 'Heb ik' }, { id: 'double', label: 'Dubbel' },
+  { id: 'double', label: 'Bied ik aan' }, { id: 'owned', label: 'In mijn album' },
 ] as const
 type Filter = (typeof filters)[number]['id']
-type AlbumUpdate = Extract<Command, { type: 'album' }>
+type Scope = 'all' | 'empty' | 'numbers'
 
-export function AlbumPage({ state, update }: { state: DemoState; update: Update }) {
+export function AlbumPage({ state, update, demoKey }: { state: DemoState; update: Update; demoKey: string }) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [selected, setSelected] = useState<number | null>(null)
-  const [bulk, setBulk] = useState(false)
-  const [bulkInput, setBulkInput] = useState('')
-  const [bulkError, setBulkError] = useState<string | null>(null)
+  const [bulkScope, setBulkScope] = useState<Scope | null>(null)
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState('')
+  const [singleError, setSingleError] = useState<string | null>(null)
+  const bulkLauncher = useRef<HTMLButtonElement | null>(null)
+  const selectedTile = useRef<HTMLButtonElement | null>(null)
+  const searchField = useRef<HTMLInputElement | null>(null)
   const doubleCounts = new Map<number, number>()
   for (const offer of myOffers(state)) doubleCounts.set(offer.number, (doubleCounts.get(offer.number) ?? 0) + 1)
   const numbers = catalog.filter((number) => String(number).includes(search.trim()) &&
@@ -27,125 +31,212 @@ export function AlbumPage({ state, update }: { state: DemoState; update: Update 
   const copies = selected === null ? [] : myOffers(state, selected)
   const canRemove = copies.some((offer) => !offer.promisedTo && offer.interested.length === 0)
 
-  async function save(command: Command, label: string, close = false) {
-    setBusy(true)
-    try {
-      await update(command, { inlineError: bulk })
-      setFeedback(label)
-      if (close) {
-        setSelected(null)
-        setBulk(false)
-      }
-    } catch (cause) {
-      if (bulk) setBulkError(errorMessage(cause))
-    } finally { setBusy(false) }
+  function openBulk(scope: Scope, launcher: HTMLButtonElement) {
+    bulkLauncher.current = launcher
+    setBulkScope(scope)
   }
 
-  function applyBulk(status: AlbumUpdate['status']) {
-    const numbers = parseStickerNumbers(bulkInput)
-    if (!numbers) {
-      setBulkError(`Vul nummers van 1 tot en met ${albumSize} in, gescheiden door komma’s of spaties.`)
-      return
-    }
-    setBulkError(null)
-    void save({ type: 'album', numbers, status }, `${numbers.length} ${numbers.length === 1 ? 'nummer' : 'nummers'} bijgewerkt.`, true)
+  function closeBulk() {
+    setBulkScope(null)
+    requestAnimationFrame(() => bulkLauncher.current?.focus({ preventScroll: true }))
+  }
+
+  async function save(command: Command, label: string, close = true) {
+    setBusy(true)
+    setSingleError(null)
+    try {
+      await update(command, { inlineError: true })
+      setFeedback(label)
+      if (close) setSelected(null)
+    } catch (cause) {
+      setSingleError(errorMessage(cause))
+    } finally { setBusy(false) }
   }
 
   return (
     <>
-      <PageHeading title="Mijn album" description="Open een stickernummer om bij te houden wat je hebt en wat je nog zoekt."
-        side={<Button leftSection={<ClipboardList size={19} aria-hidden />} onClick={() => {
-          setBulkInput('')
-          setBulkError(null)
-          setBulk(true)
-        }}>Meerdere nummers</Button>} />
+      <PageHeading title="Mijn album" description="Zet op je zoeklijst wat je mist en bied je dubbelen aan."
+        side={
+          <Group className="album-heading-actions" gap="xs">
+            <Button leftSection={<ListChecks size={19} aria-hidden />} onClick={(event) => openBulk('all', event.currentTarget)}>Alles markeren</Button>
+            <Button variant="light" leftSection={<ClipboardList size={18} aria-hidden />} onClick={(event) => openBulk('numbers', event.currentTarget)}>Meerdere nummers</Button>
+          </Group>
+        } />
       <div className="album-layout">
-        <section aria-label="Stickerlijst">
-          <div className="album-toolbar">
-            <TextInput aria-label="Zoek in je album op stickernummer" placeholder="Zoek op stickernummer"
-              leftSection={<Search size={18} aria-hidden />} inputMode="numeric" value={search}
-              onChange={(event) => setSearch(event.currentTarget.value)} />
-            <div className="filter-buttons" role="group" aria-label="Filter je album">
-              {filters.map(({ id, label }) => (
-                <Button key={id} size="compact-sm" variant={filter === id ? 'filled' : 'subtle'} aria-pressed={filter === id}
-                  onClick={() => setFilter(id)}>{label}</Button>
-              ))}
-            </div>
+        <div className="album-toolbar">
+          <TextInput ref={searchField} aria-label="Zoek in je album op stickernummer" placeholder="Zoek op stickernummer"
+            leftSection={<Search size={18} aria-hidden />} inputMode="numeric" value={search}
+            onChange={(event) => setSearch(event.currentTarget.value)} />
+          <div className="filter-buttons" role="group" aria-label="Filter je album">
+            {filters.map(({ id, label }) => (
+              <Button key={id} size="compact-sm" variant={filter === id ? 'filled' : 'subtle'} aria-pressed={filter === id}
+                onClick={() => setFilter(id)}>{label}</Button>
+            ))}
           </div>
+        </div>
+        <aside className="album-collection">
+          <details className="collection-details">
+            <summary>Mijn collectie</summary>
+            <AlbumProgress state={state} />
+          </details>
+        </aside>
+        <section className="album-list" aria-label="Stickerlijst">
           <Text className="album-feedback" size="sm" role="status" c="dimmed">{feedback}</Text>
           {numbers.length ? (
             <div className="album-grid">
               {numbers.map((number) => {
                 const count = doubleCounts.get(number) ?? 0
                 const status = count ? 'double' : state.album[number] ?? 'unset'
-                const badge = status === 'double' ? `+${count} dubbel` : status === 'owned' ? 'Heb ik' : status === 'wanted' ? 'Zoek ik' : ''
+                const badge = status === 'double' ? `${count} in aanbod` : status === 'owned' ? 'In album' : status === 'wanted' ? 'Zoek ik' : ''
                 return (
                   <button key={number} type="button" className="album-cell" data-status={status}
-                    aria-label={`Sticker ${number}, ${badge || 'nog niet ingevuld'}`} onClick={() => setSelected(number)}>
+                    aria-label={`Sticker ${number}, ${badge || 'nog niet ingevuld'}`} onClick={(event) => {
+                      selectedTile.current = event.currentTarget
+                      setSingleError(null)
+                      setSelected(number)
+                    }}>
                     <strong>{number}</strong>
-                    {badge && <span key={badge} className="cell-state">{status === 'owned' && <Check size={13} aria-hidden />}{badge}</span>}
+                    {badge && <span key={badge} className="cell-state">{count ? `${count} dubbel` : badge}</span>}
                   </button>
                 )
               })}
             </div>
           ) : <EmptyState title="Geen stickers gevonden">Probeer een ander nummer of kies ‘Alle stickers’.</EmptyState>}
         </section>
-        <aside><AlbumProgress state={state} /></aside>
       </div>
 
-      <Modal centered opened={selected !== null} onClose={() => setSelected(null)}
-        title={selected === null ? '' : `Sticker ${selected}`} closeButtonProps={{ 'aria-label': 'Sluit sticker' }}>
+      <Modal centered opened={selected !== null} onClose={() => { if (!busy) setSelected(null) }}
+        onExitTransitionEnd={() => {
+          if (!selectedTile.current?.isConnected && document.activeElement === document.body) searchField.current?.focus()
+        }}
+        title={selected === null ? '' : `Sticker ${selected}`} closeButtonProps={{ 'aria-label': 'Sluit sticker', disabled: busy }}>
         {selected !== null && (
-          <Stack>
-            <Group gap="xs">
-              {themeFor(selected) && <Text c="dimmed">{themeFor(selected)}</Text>}
-              <StatusStamp color={state.album[selected] === 'wanted' ? 'ochre' : 'olive'}>
-                {state.album[selected] === 'wanted' ? 'Zoek ik' : state.album[selected] === 'owned' ? 'Heb ik' : 'Nog leeg'}
-              </StatusStamp>
-            </Group>
-            <Group grow>
-              <Button variant="light" disabled={!!copies.length || busy}
-                onClick={() => void save({ type: 'album', numbers: [selected], status: 'wanted' }, `Je zoekt sticker ${selected}.`, true)}>Zoek ik</Button>
-              <Button disabled={busy}
-                onClick={() => void save({ type: 'album', numbers: [selected], status: 'owned' }, `Sticker ${selected} staat in je album.`, true)}>Heb ik</Button>
-            </Group>
-            <Paper withBorder p="md">
-              <Group justify="space-between" wrap="nowrap">
-                <div><Title order={3} size="h5">Dubbelen</Title><Text c="dimmed" size="sm">{copyLabel(copies.length)} in je aanbod</Text></div>
-                <Group gap={8} wrap="nowrap">
-                  <ActionIcon size="lg" variant="light" disabled={!canRemove || busy} aria-label="Haal een dubbel uit je aanbod"
-                    onClick={() => void save({ type: 'removeDouble', number: selected }, 'Een dubbel verwijderd.')}>
-                    <Minus size={20} />
-                  </ActionIcon>
-                  <ActionIcon size="lg" variant="filled" disabled={busy} aria-label="Voeg een dubbel toe aan je aanbod"
-                    onClick={() => void save({ type: 'album', numbers: [selected], status: 'double' }, 'Een dubbel toegevoegd.')}>
-                    <Plus size={20} />
-                  </ActionIcon>
-                </Group>
+          <Stack gap="sm">
+            {(themeFor(selected) || copies.length > 0 || state.album[selected]) && (
+              <Group gap="xs">
+                {themeFor(selected) && <Text c="dimmed">{themeFor(selected)}</Text>}
+                {copies.length ? <StatusStamp>{copies.length} in je aanbod</StatusStamp>
+                  : state.album[selected] && (
+                    <StatusStamp color={state.album[selected] === 'wanted' ? 'ochre' : 'gray'}>
+                      {state.album[selected] === 'wanted' ? 'Op je zoeklijst' : 'In je album'}
+                    </StatusStamp>
+                  )}
               </Group>
-              {!!copies.length && !canRemove && <Text mt="xs" size="sm" c="dimmed">Beheer geïnteresseerde of beloofde exemplaren via Mijn aanbod.</Text>}
-            </Paper>
-            {state.album[selected] && !copies.length && (
-              <Button variant="subtle" disabled={busy}
-                onClick={() => void save({ type: 'album', numbers: [selected], status: 'clear' }, `Sticker ${selected} is weer leeg.`, true)}>Haal markering weg</Button>
             )}
+
+            <Button fullWidth leftSection={<CopyPlus size={21} aria-hidden />} disabled={busy}
+              onClick={() => void save({ type: 'album', numbers: [selected], status: 'double' }, `Sticker ${selected} staat in je aanbod.`)}>
+              {copies.length ? 'Bied nog een dubbel aan' : 'Ik heb deze dubbel'}
+            </Button>
+            <Text size="sm" c="dimmed">Er komt één exemplaar bij in ‘Mijn aanbod’.</Text>
+
+            <Button fullWidth variant="light" leftSection={<Search size={20} aria-hidden />}
+              disabled={!!copies.length || busy || state.album[selected] === 'wanted'}
+              onClick={() => void save({ type: 'album', numbers: [selected], status: 'wanted' }, `Sticker ${selected} staat op je zoeklijst.`)}>
+              Zoek ik
+            </Button>
+
+            <Group className="collection-actions" gap="xs">
+              {!copies.length && state.album[selected] !== 'owned' && (
+                <Button size="sm" variant="subtle" disabled={busy}
+                  onClick={() => void save({ type: 'album', numbers: [selected], status: 'owned' }, `Sticker ${selected} staat in je album.`)}>Alleen afvinken</Button>
+              )}
+              {!copies.length && state.album[selected] && (
+                <Button size="sm" variant="subtle" color="gray" disabled={busy}
+                  onClick={() => void save({ type: 'album', numbers: [selected], status: 'clear' }, `Sticker ${selected} is weer leeg.`)}>Markering wissen</Button>
+              )}
+              {!!copies.length && canRemove && (
+                <Button size="sm" variant="subtle" disabled={busy}
+                  onClick={() => void save({ type: 'removeDouble', number: selected }, 'Eén exemplaar uit je aanbod gehaald.', false)}>Haal één dubbel uit aanbod</Button>
+              )}
+            </Group>
+            {!!copies.length && !canRemove && <Text size="sm" c="dimmed">Dit aanbod heeft interesse of is beloofd. Bekijk het bij ‘Mijn aanbod’.</Text>}
+            {singleError && <Alert color="red" role="alert">{singleError}</Alert>}
           </Stack>
         )}
       </Modal>
 
-      <Modal centered opened={bulk} onClose={() => setBulk(false)} title="Meerdere nummers invullen"
-        closeButtonProps={{ 'aria-label': 'Sluit meerdere nummers' }}>
-        <Stack>
-          <TextInput label="Stickernummers" placeholder="Bijvoorbeeld 12, 34, 80" description="Gebruik komma’s of spaties."
-            value={bulkInput} error={bulkError} onChange={(event) => { setBulkInput(event.currentTarget.value); setBulkError(null) }} />
-          <Group grow>
-            <Button variant="light" disabled={busy} onClick={() => applyBulk('wanted')}>Zoek ik</Button>
-            <Button variant="light" disabled={busy} onClick={() => applyBulk('owned')}>Heb ik</Button>
-            <Button disabled={busy} onClick={() => applyBulk('double')}>Voeg dubbelen toe</Button>
-          </Group>
-          <Text c="dimmed" size="sm">Voor elk opgegeven nummer voeg je één dubbel toe.</Text>
-        </Stack>
-      </Modal>
+      {bulkScope && (
+        <BulkMark initialScope={bulkScope} demoKey={demoKey} onClose={closeBulk} onSaved={(message) => {
+          setFeedback(message)
+          closeBulk()
+        }} />
+      )}
     </>
+  )
+}
+
+function BulkMark({ initialScope, demoKey, onClose, onSaved }: {
+  initialScope: Scope
+  demoKey: string
+  onClose: () => void
+  onSaved: (message: string) => void
+}) {
+  const [scope, setScope] = useState(initialScope)
+  const [input, setInput] = useState('')
+  const [inputError, setInputError] = useState<string | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const markAlbum = useMutation(api.demo.markAlbum)
+
+  async function mark(status: 'wanted' | 'double' | 'owned') {
+    const selection = scope === 'numbers' ? parseStickerNumbers(input) : scope
+    if (!selection) {
+      setInputError(`Gebruik nummers van 1 tot en met ${albumSize}, met komma’s of spaties ertussen.`)
+      return
+    }
+    setBusy(true)
+    setSubmitError(null)
+    try {
+      const { changed, protectedCount } = await markAlbum({ key: demoKey, scope: selection, status })
+      const total = changed === 1 ? '1 sticker' : `${changed} stickers`
+      let message = scope === 'empty' ? 'Er zijn geen lege vakjes om bij te werken.' : 'Deze stickers stonden al zo.'
+      if (changed) {
+        if (status === 'wanted') message = `${total} op je zoeklijst gezet.`
+        else if (status === 'double') message = changed === 1 ? '1 dubbel toegevoegd aan je aanbod.' : `${changed} dubbelen toegevoegd aan je aanbod.`
+        else message = `${total} afgevinkt in je album.`
+      }
+      if (protectedCount) {
+        const protectedLabel = protectedCount === 1 ? '1 nummer' : `${protectedCount} nummers`
+        const unchanged = changed ? '' : 'Je zoeklijst is gelijk gebleven. '
+        message = `${changed ? message + ' ' : unchanged}${protectedLabel} in je aanbod behouden.`
+      }
+      onSaved(message)
+    } catch (cause) {
+      setSubmitError(errorMessage(cause))
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <Modal opened centered onClose={() => { if (!busy) onClose() }}
+      title={initialScope === 'numbers' ? 'Meerdere nummers' : 'Alles markeren'}
+      closeButtonProps={{ 'aria-label': 'Sluit stickers markeren', disabled: busy }}>
+      <Stack gap="sm">
+        <Text fw={700}>Welke stickers?</Text>
+        <SegmentedControl fullWidth aria-label="Welke stickers?" value={scope} disabled={busy} onChange={(next) => {
+          setScope(next as Scope)
+          setSubmitError(null)
+        }} data={[
+          { value: 'all', label: `Alle ${albumSize}` },
+          { value: 'empty', label: 'Lege vakjes' },
+          { value: 'numbers', label: 'Losse nummers' },
+        ]} />
+        {scope === 'all' && <Text size="sm" c="dimmed">Dit geldt voor het hele album, ook voor eerder ingevulde vakjes.</Text>}
+        {scope === 'empty' && <Text size="sm" c="dimmed">Je past alleen vakjes aan die je nog niet hebt ingevuld.</Text>}
+        {scope === 'numbers' && (
+          <TextInput label="Stickernummers" placeholder="12, 34, 80" description="Gebruik komma’s of spaties."
+            data-autofocus value={input} error={inputError} disabled={busy}
+            onChange={(event) => { setInput(event.currentTarget.value); setInputError(null); setSubmitError(null) }} />
+        )}
+
+        <Button leftSection={<Search size={20} aria-hidden />} disabled={busy} onClick={() => void mark('wanted')}>Zet op mijn zoeklijst</Button>
+        <Button variant="light" leftSection={<CopyPlus size={20} aria-hidden />} disabled={busy} onClick={() => void mark('double')}>Bied dubbelen aan</Button>
+        <Text size="sm" c="dimmed">
+          {scope === 'numbers' ? 'Je voegt één dubbel toe per ingevuld nummer.' : 'Je zet één dubbel in je aanbod voor elk gekozen nummer dat je nog niet aanbiedt.'}
+        </Text>
+        <Button variant="subtle" size="sm" className="collection-only-action" disabled={busy} onClick={() => void mark('owned')}>Alleen afvinken in mijn album</Button>
+        {submitError && <Alert color="red" role="alert">{submitError}</Alert>}
+      </Stack>
+    </Modal>
   )
 }
