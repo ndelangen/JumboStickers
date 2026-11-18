@@ -74,8 +74,18 @@ export default defineSchema({
   unreadMessages: defineTable({
     conversation: v.id('conversations'),
     recipient: v.id('collectors'),
+    sender: v.optional(v.id('collectors')),
     text: v.string(),
-  }).index('by_recipient', ['recipient']).index('by_conversation', ['conversation']),
+  })
+    .index('by_recipient_and_sender', ['recipient', 'sender'])
+    .index('by_recipient', ['recipient'])
+    .index('by_conversation', ['conversation']),
+  messageBlocks: defineTable({
+    blocker: v.id('collectors'),
+    blocked: v.id('collectors'),
+  })
+    .index('by_blocker_and_blocked', ['blocker', 'blocked'])
+    .index('by_blocked', ['blocked']),
   messageDeliveries: defineTable({
     sender: v.id('collectors'),
     clientId: v.string(),

@@ -11,6 +11,8 @@ import { AlbumPage } from './pages/AlbumPage'
 import { MessagesPage } from './pages/MessagesPage'
 import { SettingsPage, SignInPage } from './pages/AccountPages'
 import { BrandLink, EmptyState } from './ui'
+import { PrivacyPage, UsageRulesPage } from './pages/PolicyPages'
+import { SiteFooter } from './SiteFooter'
 import { useUnreadMessages } from './useUnreadMessages'
 
 const links = [
@@ -22,6 +24,24 @@ const links = [
 
 function activeArea(path: string) {
   return path === '/' ? '/ruilen' : '/' + path.split('/')[1]
+}
+
+function policyFor(area: string) {
+  if (area === '/privacy') return PrivacyPage
+  if (area === '/gebruiksregels') return UsageRulesPage
+}
+
+export function PublicPolicyFallback({ children }: { children: ReactNode }) {
+  const area = activeArea(location.pathname)
+  const Policy = policyFor(area)
+  return (
+    <div className="app-shell">
+      <main className="site-width">
+        {Policy ? <Policy /> : children}
+      </main>
+      <SiteFooter area={area} />
+    </div>
+  )
 }
 
 export function DemoApp() {
@@ -59,8 +79,10 @@ export function FinishAccountRemoval({ historyKey, signOut, donePath = '/inlogge
 }) {
   const [attempt, setAttempt] = useState(0)
   const [failure, setFailure] = useState<'history' | 'signOut' | null>(null)
+  const isPolicy = !!policyFor(activeArea(location.pathname))
 
   useEffect(() => {
+    if (isPolicy) return
     let active = true
     void retireLocalHistory(historyKey).then(async () => {
       if (!active) return
@@ -72,16 +94,18 @@ export function FinishAccountRemoval({ historyKey, signOut, donePath = '/inlogge
       }
     }, () => { if (active) setFailure('history') })
     return () => { active = false }
-  }, [attempt, donePath, historyKey, signOut])
+  }, [attempt, donePath, historyKey, isPolicy, signOut])
 
-  return <main className="site-width loading">
-    {failure ? (
-      <EmptyState title={failure === 'history' ? 'Chatgeschiedenis wissen is niet gelukt' : 'Uitloggen is niet gelukt'} action={<Button onClick={() => {
-        setFailure(null)
-        setAttempt((value) => value + 1)
-      }}>Opnieuw proberen</Button>}>Je Stickerruil-account is gesloten.</EmptyState>
-    ) : <Group role="status"><Loader size="sm" /><Text>We wissen je chatgeschiedenis en loggen je uit…</Text></Group>}
-  </main>
+  return <PublicPolicyFallback>
+    <div className="loading">
+      {failure ? (
+        <EmptyState title={failure === 'history' ? 'Chatgeschiedenis wissen is niet gelukt' : 'Uitloggen is niet gelukt'} action={<Button onClick={() => {
+          setFailure(null)
+          setAttempt((value) => value + 1)
+        }}>Opnieuw proberen</Button>}>Je Stickerruil-account is gesloten.</EmptyState>
+      ) : <Group role="status"><Loader size="sm" /><Text>We wissen je chatgeschiedenis en loggen je uit…</Text></Group>}
+    </div>
+  </PublicPolicyFallback>
 }
 
 export function App({ state, start, commit, markAlbum, historyKey, sendMessage, eraseAccount, hosted, authStopped = false }: {
@@ -100,6 +124,7 @@ export function App({ state, start, commit, markAlbum, historyKey, sendMessage, 
   const content = useRef<HTMLElement>(null)
   const shouldFocus = useRef(false)
   const area = activeArea(path)
+  const Policy = policyFor(area)
   const { arrival, unread } = useUnreadMessages(state?.inbox)
   const unreadLabel = unread === 1 ? '1 ongelezen bericht' : `${unread} ongelezen berichten`
 
@@ -193,7 +218,8 @@ export function App({ state, start, commit, markAlbum, historyKey, sendMessage, 
       )}
       <main className="site-width" id="inhoud" ref={content}>
         <div className="page-transition" key={area}>
-          {area === '/inloggen' ? hosted?.signIn ?? <SignInPage navigate={navigate} /> : state ? (
+          {Policy ? <Policy /> :
+            area === '/inloggen' ? hosted?.signIn ?? <SignInPage navigate={navigate} /> : state ? (
             area === '/ruilen' ? <OffersPage state={state} update={update} navigate={navigate} signedIn={!!sendMessage} /> :
             area === '/album' ? <AlbumPage state={state} update={update} markAlbum={markAlbum} /> :
             area === '/berichten' ? <MessagesPage state={state} threadId={path.split('/')[2]} demoKey={historyKey} update={update} sendMessage={sendMessage} /> :
@@ -208,17 +234,20 @@ export function App({ state, start, commit, markAlbum, historyKey, sendMessage, 
           ) : <Group className="loading" role="status"><Loader size="sm" /><Text>Even het album pakken…</Text></Group>}
         </div>
       </main>
+      <SiteFooter area={area} />
     </div>
   )
 }
 
 export function LocalSetup() {
   return (
-    <main className="site-width loading">
-      <Paper withBorder p="xl">
-        <Title order={1}>Stickerruil Zwolle</Title>
-        <Text mt="sm">Deze proef heeft een lokale Convex-server nodig. Start die met <code>npm run dev:convex</code> en start daarna de webapp opnieuw.</Text>
-      </Paper>
-    </main>
+    <PublicPolicyFallback>
+      <div className="loading">
+        <Paper withBorder p="xl">
+          <Title order={1}>Stickerruil Zwolle</Title>
+          <Text mt="sm">Deze proef heeft een lokale Convex-server nodig. Start die met <code>npm run dev:convex</code> en start daarna de webapp opnieuw.</Text>
+        </Paper>
+      </div>
+    </PublicPolicyFallback>
   )
 }

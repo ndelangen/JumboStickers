@@ -74,10 +74,10 @@ export function AlbumProgress({ state, showLink }: { state: DemoState; showLink?
 
 export function PhotoCredit() {
   return (
-    <footer className="photo-credit">
+    <div className="photo-credit">
       <a href="https://commons.wikimedia.org/wiki/File:Zwolle_Centrum.jpg">Foto van Zwolle door Deerpeter</a>
       <span aria-hidden="true"> · </span>
       <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>
-    </footer>
+    </div>
   )
 }
