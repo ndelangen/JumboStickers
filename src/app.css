@@ -613,3 +613,89 @@ body:has(#nl-badge-frame) .site-footer-inner { padding-block-end: 72px; }
   border-color: var(--album-border);
 }
 .local-accounts h2 { font-size: 1.3rem; }
+
+.settings-profile { grid-column: 1 / -1; }
+.settings-profile-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr);
+  grid-template-areas: "fields map" "actions map";
+  grid-template-rows: auto 1fr;
+  align-items: start;
+  gap: 16px 24px;
+}
+.settings-profile-fields { grid-area: fields; }
+.district-map-panel { grid-area: map; }
+.settings-profile-actions { grid-area: actions; }
+
+.district-map-frame {
+  border: 1px solid var(--album-border);
+  border-radius: var(--mantine-radius-md);
+  overflow: hidden;
+  background: #ecf0ea;
+}
+.district-map {
+  width: 100%;
+  aspect-ratio: 480 / 492;
+  display: block;
+}
+.district-map-area { cursor: pointer; }
+.district-map-context { opacity: .48; pointer-events: none; }
+.district-map-area path {
+  stroke: #7a8267;
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+  fill: #faf5dc;
+  fill-rule: evenodd;
+}
+.district-map-area[data-search] path { fill: url(#district-map-stripes); }
+.district-map-stripe-base { fill: #d6dfa9; }
+.district-map-stripe-line { stroke: #b5c485; stroke-width: 1; }
+.district-map-area:hover path, .district-map-area:focus-visible path {
+  stroke: var(--album-olive);
+  stroke-width: 2.5px;
+}
+.district-map-area:focus-visible { outline: none; }
+.district-map-area[aria-disabled="true"] { cursor: default; }
+
+.district-map-labels {
+  pointer-events: none;
+  fill: #343b27;
+  font-size: 15px;
+  font-weight: 700;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: #faf5dc;
+  stroke-width: 2.4px;
+  stroke-linejoin: round;
+}
+.district-map-zoom-label { font-size: 6px; stroke-width: 1px; }
+.district-map-home {
+  fill: var(--album-gold);
+  stroke: #3e3b21;
+  stroke-width: 1.1px;
+}
+.district-map-swatch {
+  display: inline-block;
+  width: .8em;
+  height: .8em;
+  vertical-align: baseline;
+  border: 1px solid #6d754f;
+  margin-inline-end: 3px;
+}
+.district-map-swatch[data-kind="home"] {
+  border-radius: 50%;
+  background: var(--album-gold);
+}
+.district-map-swatch[data-kind="search"] {
+  background: repeating-linear-gradient(50deg, #b5c485 0 1px, #d6dfa9 1px 4px);
+}
+.district-map-legend a { margin-inline-start: auto; }
+
+@media (max-width: 720px) {
+  .settings-profile-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    grid-template-areas: "fields" "map" "actions";
+    gap: 20px;
+  }
+}

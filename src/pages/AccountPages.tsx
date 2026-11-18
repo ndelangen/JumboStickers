@@ -6,6 +6,7 @@ import { ArrowRight, Inbox, Mail, Trash2 } from 'lucide-react'
 import type { FunctionArgs } from 'convex/server'
 import type { District } from '../../convex/districts'
 import { HomeDistrictField, SearchDistrictsField } from '../DistrictFields'
+import { DistrictMap } from '../DistrictMap'
 import { clearLocalHistory } from '../chatStorage'
 import { errorMessage, type DemoState, type Update } from '../demo'
 import { PageHeading, PhotoCredit } from '../ui'
@@ -134,11 +135,23 @@ export function SettingsPage({ state, update, demoKey, eraseAccount, usesDescope
   const [confirmRemoval, setConfirmRemoval] = useState(false)
   const [removing, setRemoving] = useState(false)
   const [removalError, setRemovalError] = useState('')
+  const searchDistricts = searchDraft ?? state.searchDistricts ?? []
+
+  function changeDistrict(value: District | null) {
+    setDistrictDraft(value)
+    setFeedback('')
+  }
+
+  function changeSearchDistricts(value: District[]) {
+    setSearchDraft(value)
+    setFeedback('')
+  }
+
   return (
     <>
       <PageHeading title="Instellingen" />
       <div className="settings-layout">
-        <Paper component="form" withBorder p="lg" onSubmit={async (event) => {
+        <Paper component="form" withBorder p="lg" className="settings-profile" onSubmit={async (event) => {
           event.preventDefault()
           setBusy(true)
           try {
@@ -152,25 +165,25 @@ export function SettingsPage({ state, update, demoKey, eraseAccount, usesDescope
             setFeedback('Je instellingen zijn opgeslagen.')
           } catch { /* App displays the error. */ } finally { setBusy(false) }
         }}>
-          <Stack>
-            <Title order={2}>Je profiel</Title>
-            <TextInput required label="Schermnaam" maxLength={32} value={displayName} onChange={(event) => {
-              setDisplayName(event.currentTarget.value)
-              setFeedback('')
-            }} />
-            <HomeDistrictField value={district} disabled={busy} onChange={(value) => {
-              setDistrictDraft(value)
-              setFeedback('')
-            }} />
-            <SearchDistrictsField value={searchDraft ?? state.searchDistricts ?? []} disabled={busy} onChange={(value) => {
-              setSearchDraft(value)
-              setFeedback('')
-            }} />
-            {!usesDescope && <Switch label="Mail me over nieuwe ruilkansen" checked={digest}
-              description="Eén overzicht om 16.00 uur met stickers die je zoekt en waar nog niemand om heeft gevraagd."
-              onChange={(event) => { setDigest(event.currentTarget.checked); setFeedback('') }} />}
-            <Group><Button loading={busy} type="submit">Opslaan</Button><Text role="status" c="dimmed">{feedback}</Text></Group>
-          </Stack>
+          <div className="settings-profile-grid">
+            <Stack className="settings-profile-fields">
+              <Title order={2}>Je profiel</Title>
+              <TextInput required label="Schermnaam" maxLength={32} value={displayName} onChange={(event) => {
+                setDisplayName(event.currentTarget.value)
+                setFeedback('')
+              }} />
+              <HomeDistrictField value={district} disabled={busy} onChange={changeDistrict} />
+              <SearchDistrictsField value={searchDistricts} disabled={busy} onChange={changeSearchDistricts} />
+              {!usesDescope && <Switch label="Mail me over nieuwe ruilkansen" checked={digest}
+                description="Eén overzicht om 16.00 uur met stickers die je zoekt en waar nog niemand om heeft gevraagd."
+                onChange={(event) => { setDigest(event.currentTarget.checked); setFeedback('') }} />}
+            </Stack>
+            <DistrictMap district={district} searchDistricts={searchDistricts} disabled={busy}
+              onDistrictChange={changeDistrict} onSearchChange={changeSearchDistricts} />
+            <Group className="settings-profile-actions">
+              <Button loading={busy} type="submit">Opslaan</Button><Text role="status" c="dimmed">{feedback}</Text>
+            </Group>
+          </div>
         </Paper>
         <Paper withBorder p="lg">
           <Stack>
