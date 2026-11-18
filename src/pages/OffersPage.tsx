@@ -108,7 +108,7 @@ export function OffersPage({ state, update, navigate, signedIn }: {
       case 'wanted': return offer.owner !== 'me' && !offer.promisedTo && state.album[offer.number] === 'wanted'
       case 'available': return offer.owner !== 'me' && !offer.promisedTo
     }
-  }).sort((first, second) => Number(canTrade(second)) - Number(canTrade(first)))
+  }).sort((first, second) => first.number - second.number)
   const selected = offers.find((offer) => offer.id === selectedId)
 
   async function handle(updateCall: () => Promise<unknown>) {
