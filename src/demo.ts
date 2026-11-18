@@ -19,18 +19,18 @@ export function errorMessage(error: unknown) {
     : 'Opslaan is niet gelukt. Probeer het nog eens.'
 }
 
-const people: Record<string, { name: string; initials: string; wants: number[] }> = {
-  noor: { name: 'Noor V.', initials: 'NV', wants: [12, 57] },
-  sam: { name: 'Sam B.', initials: 'SB', wants: [57] },
+const people: Record<string, { name: string; initials: string; wants: number[]; district?: DemoState['district'] }> = {
+  noor: { name: 'Noor V.', initials: 'NV', wants: [12, 57], district: 'Assendorp' },
+  sam: { name: 'Sam B.', initials: 'SB', wants: [57], district: 'Stadshagen' },
   fatima: { name: 'Fatima D.', initials: 'FD', wants: [41, 80] },
-  eva: { name: 'Eva P.', initials: 'EP', wants: [12, 23] },
+  eva: { name: 'Eva P.', initials: 'EP', wants: [12, 23], district: 'Assendorp' },
 }
 
 export function personFor(id: string, state: DemoState) {
-  if (id === 'me') return { name: state.displayName, initials: initialsFor(state.displayName), wants: [] }
+  if (id === 'me') return { name: state.displayName, initials: initialsFor(state.displayName), wants: [], district: state.district }
   const person = state.people?.[id]
   if (person) return { ...person, initials: initialsFor(person.name) }
-  return people[id] ?? { name: 'Verzamelaar', initials: 'V', wants: [] }
+  return people[id] ?? { name: 'Verzamelaar', initials: 'V', wants: [], district: undefined }
 }
 
 function initialsFor(name: string) {

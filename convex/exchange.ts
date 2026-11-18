@@ -6,8 +6,13 @@ import { batchAlbumArgs, offerLimit, validNumbers } from './album'
 import { exchangeCommand } from './demo'
 import { currentCollector, requireCollector } from './collectors'
 import { demoStateFields } from './schema'
+import { districtValidator, uniqueDistricts } from './districts'
 
-const peopleValidator = v.record(v.string(), v.object({ name: v.string(), wants: v.array(v.number()) }))
+const peopleValidator = v.record(v.string(), v.object({
+  name: v.string(),
+  wants: v.array(v.number()),
+  district: v.optional(districtValidator),
+}))
 const snapshotValidator = v.object({ ...demoStateFields, people: peopleValidator, collectorId: v.id('collectors') })
 const inboxLimit = 250
 const unreadPerSender = 5
@@ -70,8 +75,9 @@ export const get = query({
     const candidates = [...threadMap.values()].sort((a, b) => b._creationTime - a._creationTime).map((thread) => threadView(thread, me._id))
 
     const ownAvailableNumbers = new Set(mine.filter((offer) => offer.status === 'available').map((offer) => offer.number))
+    const offerOwners = new Set([...offers.values()].map((offer) => offer.owner))
     const related = new Set<Id<'collectors'>>([
-      ...[...offers.values()].map((offer) => offer.owner),
+      ...offerOwners,
       ...forMe.map((interest) => interest.collector),
       ...candidates.map((thread) => thread.person),
       ...mine.flatMap((offer) => offer.promisedTo ? [offer.promisedTo] : []),
@@ -85,12 +91,18 @@ export const get = query({
     return {
       collectorId: me._id,
       displayName: me.displayName,
+      district: me.district,
+      searchDistricts: me.searchDistricts,
       digest: me.digest,
       album: me.album,
-      people: Object.fromEntries(profiles.flatMap((profile) => profile ? [[profile._id, {
-        name: profile.displayName,
-        wants: [...ownAvailableNumbers].filter((number) => profile.album[number] === 'wanted'),
-      }]] : [])),
+      people: Object.fromEntries(profiles.map((profile) => {
+        const district = offerOwners.has(profile._id) ? profile.district : undefined
+        return [profile._id, {
+          name: profile.displayName,
+          wants: [...ownAvailableNumbers].filter((number) => profile.album[number] === 'wanted'),
+          ...(district ? { district } : {}),
+        }]
+      })),
       offers: [...offers.values()].filter((offer) => offer.owner === me._id || active.has(offer.owner)).map((offer) => ({
         id: offer._id,
         number: offer.number,
@@ -208,7 +220,12 @@ export const update = mutation({
     if (command.type === 'profile') {
       const displayName = command.displayName.trim()
       if (!displayName || displayName.length > 32) throw new ConvexError('Kies een naam van maximaal 32 tekens.')
-      await ctx.db.patch('collectors', me._id, { displayName, digest: command.digest })
+      await ctx.db.patch('collectors', me._id, {
+        displayName,
+        digest: command.digest,
+        ...(command.district === undefined ? {} : { district: command.district ?? undefined }),
+        ...(command.searchDistricts === undefined ? {} : { searchDistricts: uniqueDistricts(command.searchDistricts) }),
+      })
       return null
     }
     if (command.type === 'read') {
