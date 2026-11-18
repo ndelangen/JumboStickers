@@ -15,6 +15,7 @@
     "@mantine/core": "^9.8.1",
     "@mantine/hooks": "^9.8.1",
     "convex": "^1.51.0",
+    "convex-helpers": "0.1.136",
     "lucide-react": "^1.75.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

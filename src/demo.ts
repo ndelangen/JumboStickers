@@ -33,7 +33,7 @@ export function personFor(id: string, state: DemoState) {
   return people[id] ?? { name: 'Verzamelaar', initials: 'V', wants: [], district: undefined }
 }
 
-function initialsFor(name: string) {
+export function initialsFor(name: string) {
   return name.split(/\s+/u).slice(0, 2).map((word) => word[0]).join('').toUpperCase()
 }
 
