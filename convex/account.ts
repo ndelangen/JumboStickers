@@ -59,13 +59,18 @@ export const registerOwn = mutation({
 })
 
 export const eraseOwn = mutation({
-  args: {},
+  args: { expected: v.optional(v.id('collectors')) },
   returns: v.null(),
-  handler: async (ctx) => {
+  handler: async (ctx, { expected }) => {
     const identity = await ctx.auth.getUserIdentity()
-    if (!identity || identity.issuer !== localOrigin()) throw new ConvexError('Accountverwijdering is alleen beschikbaar voor de lokale proefaccounts.')
+    if (!identity || (identity.issuer !== localOrigin() && !isDescopeSession(identity))) {
+      throw new ConvexError('Log in om je account te verwijderen.')
+    }
     const collector = await currentCollector(ctx)
     if (!collector) return null
+    if ((expected && collector._id !== expected) || (!expected && identity.issuer !== localOrigin())) {
+      throw new ConvexError('Je profiel is gewijzigd. Open Instellingen opnieuw.')
+    }
     await ctx.db.patch('collectors', collector._id, { deleting: true, displayName: '', album: {}, digest: false })
     await ctx.scheduler.runAfter(0, internal.account.purge, { collector: collector._id })
     return null

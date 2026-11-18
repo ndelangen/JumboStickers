@@ -56,11 +56,12 @@ export function SignInPage({ navigate }: { navigate: (path: string) => void }) {
   )
 }
 
-export function SettingsPage({ state, update, demoKey, eraseAccount }: {
+export function SettingsPage({ state, update, demoKey, eraseAccount, usesDescope }: {
   state: DemoState
   update: Update
   demoKey: string
   eraseAccount?: () => Promise<null>
+  usesDescope: boolean
 }) {
   const [displayName, setDisplayName] = useState(state.displayName)
   const [digest, setDigest] = useState(state.digest)
@@ -123,7 +124,8 @@ export function SettingsPage({ state, update, demoKey, eraseAccount }: {
           title="Je account definitief verwijderen?" closeButtonProps={{ 'aria-label': 'Sluit bevestiging' }}
           withCloseButton={!removing} centered>
           <Stack>
-            <Text>We wissen je profiel, album, aanbod, interesses, ruilafspraken en berichten op de server. We wissen ook je chatgeschiedenis in deze browser.</Text>
+            <Text>We wissen je profiel, album, aanbod, interesses, ruilafspraken en berichten bij Stickerruil. We wissen ook je chatgeschiedenis in deze browser en loggen je uit.</Text>
+            {usesDescope && <Text>Descope bewaart je e-mailadres voor als je later opnieuw wilt inloggen.</Text>}
             <Text>Berichten die iemand al in zijn eigen browser heeft opgeslagen, blijven daar staan. Je kunt deze actie niet ongedaan maken.</Text>
             {removalError && <Text role="alert" c="red">{removalError}</Text>}
             <Group>

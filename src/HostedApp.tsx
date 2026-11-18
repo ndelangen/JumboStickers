@@ -1,16 +1,26 @@
-import { AuthProvider, Descope, getSessionToken, useDescope, useSession } from '@descope/react-sdk'
+import { AuthProvider, Descope, getRefreshToken, getSessionToken, useDescope, useSession } from '@descope/react-sdk'
 import { Alert, Button, Group, Loader, Paper, Stack, Text, TextInput } from '@mantine/core'
 import { ConvexProviderWithAuth, useConvexAuth, useMutation, useQuery, type ConvexReactClient } from 'convex/react'
 import { Mail } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api } from '../convex/_generated/api'
-import { App } from './App'
+import { App, FinishAccountRemoval } from './App'
 import { errorMessage, type Update } from './demo'
 import { EmptyState, PageHeading, PhotoCredit } from './ui'
 
 type DescopeConfig = { projectId: string, baseUrl: string, flowId: string }
 const redirectPath = '/inloggen'
 const sender = 'noreply@descope.io'
+const removalStorageKey = 'stickerruil.account-verwijderen'
+type Removal = { collectorId: string, subject: string, committed: boolean }
+
+function pendingRemoval() {
+  try {
+    return JSON.parse(localStorage.getItem(removalStorageKey) ?? 'null') as Removal | null
+  } catch {
+    return null
+  }
+}
 
 function useHostedAuth() {
   const { isAuthenticated, isSessionLoading } = useSession()
@@ -38,6 +48,8 @@ function Login({ flowId, onVerified }: { flowId: string, onVerified: () => void 
       <Paper className="sign-in-form" radius={0} p="xl">
         <Stack>
           <div className="mail-sticker" aria-hidden><Mail size={28} /></div>
+          {new URLSearchParams(location.search).get('account') === 'verwijderd' &&
+            <Alert color="olive" role="status">Je Stickerruil-account is gesloten. Je bent uitgelogd.</Alert>}
           <PageHeading title="Inloggen om te ruilen" />
           <Text>Vul je e-mailadres in. Je krijgt een link waarmee je meteen inlogt. Je hebt geen wachtwoord nodig.</Text>
           <Text>De mail komt van <strong>{sender}</strong>. De link werkt één keer en is vijf minuten geldig.</Text>
@@ -93,14 +105,64 @@ function ChooseName() {
 function HostedExchange({ flowId }: { flowId: string }) {
   const [checkingLink, setCheckingLink] = useState(hasMagicLink)
   const [logoutError, setLogoutError] = useState(false)
+  const [removal, setRemoval] = useState(pendingRemoval)
   const session = useSession()
   const { logout } = useDescope()
   const { isAuthenticated, isLoading } = useConvexAuth()
   const state = useQuery(api.exchange.get, isAuthenticated ? {} : 'skip')
+  const subject = session.claims?.sub
+  const collectorId = state?.collectorId
   const mutate = useMutation(api.exchange.update)
   const markAlbum = useMutation(api.exchange.markAlbum)
   const sendMessage = useMutation(api.exchange.send)
+  const erase = useMutation(api.account.eraseOwn)
   const update = useCallback<Update>((command) => mutate({ command }), [mutate])
+
+  useEffect(() => {
+    function syncRemoval(event: StorageEvent) {
+      if (event.key !== removalStorageKey) return
+      const pending = pendingRemoval()
+      setRemoval((current) => pending ?? (current?.committed ? current : null))
+    }
+    window.addEventListener('storage', syncRemoval)
+    return () => window.removeEventListener('storage', syncRemoval)
+  }, [])
+
+  const eraseAccount = async () => {
+    if (!collectorId || !subject) throw new Error('Open Instellingen opnieuw voordat je je account verwijdert.')
+    const pending = { collectorId, subject, committed: false }
+    localStorage.setItem(removalStorageKey, JSON.stringify(pending))
+    setRemoval(pending)
+    try {
+      await erase({ expected: collectorId })
+    } catch (cause) {
+      localStorage.removeItem(removalStorageKey)
+      setRemoval(null)
+      throw cause
+    }
+    const committed = { ...pending, committed: true }
+    localStorage.setItem(removalStorageKey, JSON.stringify(committed))
+    setRemoval(committed)
+    return null
+  }
+
+  const erased = removal?.committed || (state === null && removal?.subject === subject) ? removal : null
+  const erasedId = erased?.collectorId
+  const sameSession = !!subject && subject === erased?.subject
+  const finishRemoval = useCallback(async () => {
+    if (!subject && getRefreshToken()) throw new Error()
+    if (sameSession && (getSessionToken() || getRefreshToken())) {
+      await logout()
+      if (getSessionToken() || getRefreshToken()) throw new Error()
+    }
+    if (pendingRemoval()?.collectorId === erasedId) localStorage.removeItem(removalStorageKey)
+  }, [erasedId, logout, sameSession, subject])
+
+  if (erasedId) {
+    if (session.isSessionLoading) return <Group className="loading" role="status"><Loader size="sm" /><Text>Even je sessie controleren…</Text></Group>
+    return <FinishAccountRemoval historyKey={`hosted:${erasedId}`} signOut={finishRemoval}
+      donePath={subject && !sameSession ? '/instellingen' : undefined} />
+  }
   const signOut = async () => {
     setLogoutError(false)
     try {
@@ -119,7 +181,7 @@ function HostedExchange({ flowId }: { flowId: string }) {
         action={<Button onClick={() => void signOut()}>Log opnieuw in</Button>}>Vraag een nieuwe inloglink aan.</EmptyState> :
         login
   return <App state={state} commit={update} markAlbum={markAlbum} historyKey={state ? `hosted:${state.collectorId}` : ''}
-    sendMessage={state ? sendMessage : undefined}
+    sendMessage={state ? sendMessage : undefined} eraseAccount={state ? eraseAccount : undefined}
     hosted={{ signIn, notice: logoutError ? <Alert className="app-error" role="alert" color="red">
       Uitloggen is niet gelukt. Probeer het opnieuw.
     </Alert> : undefined, placeholder: isAuthenticated || isLoading ? signIn : <EmptyState title="Ruil mee met Stickerruil Zwolle"
