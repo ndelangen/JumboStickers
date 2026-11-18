@@ -7,6 +7,7 @@ import { api } from '../convex/_generated/api'
 import { App, FinishAccountRemoval } from './App'
 import { errorMessage, type Update } from './demo'
 import { EmptyState, PageHeading, PhotoCredit } from './ui'
+import { OfferCover } from './pages/OffersPage'
 
 type DescopeConfig = { projectId: string, baseUrl: string, flowId: string }
 const redirectPath = '/inloggen'
@@ -182,7 +183,8 @@ function HostedExchange({ flowId }: { flowId: string }) {
         login
   return <App state={state} commit={update} markAlbum={markAlbum} historyKey={state ? `hosted:${state.collectorId}` : ''}
     sendMessage={state ? sendMessage : undefined} eraseAccount={state ? eraseAccount : undefined}
-    hosted={{ signIn, notice: logoutError ? <Alert className="app-error" role="alert" color="red">
+    hosted={{ signIn, landing: !isLoading && !session.isSessionLoading && !session.isAuthenticated ?
+      <><OfferCover signedIn={false} /><PhotoCredit /></> : undefined, notice: logoutError ? <Alert className="app-error" role="alert" color="red">
       Uitloggen is niet gelukt. Probeer het opnieuw.
     </Alert> : undefined, placeholder: isAuthenticated || isLoading ? signIn : <EmptyState title="Ruil mee met Stickerruil Zwolle"
       action={<Button component="a" href={redirectPath}>Ik wil ook stickers ruilen</Button>}>Log in met een eenmalige link in je e-mail.</EmptyState>,
