@@ -1,3 +1,5 @@
+import { useMutation, useQuery } from 'convex/react'
+import { api } from '../../convex/_generated/api'
 import { useState } from 'react'
 import { Alert, Anchor, Button, Group, Modal, Paper, Stack, Switch, Text, TextInput, Title } from '@mantine/core'
 import { ArrowRight, Inbox, Mail, Trash2 } from 'lucide-react'
@@ -56,6 +58,33 @@ export function SignInPage({ navigate }: { navigate: (path: string) => void }) {
   )
 }
 
+function DigestSettings() {
+  const preferences = useQuery(api.digest.preferences)
+  const subscribe = useMutation(api.digest.subscribe)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  if (!preferences?.available && !preferences?.subscribed) return null
+
+  return <Paper withBorder p="lg" className="account-removal">
+    <Stack gap="sm">
+      <Title order={2}>Dagelijkse ruilmail</Title>
+      <Switch label="Mail me over nieuwe ruilkansen" checked={preferences.subscribed}
+        disabled={busy || (!preferences.verifiedEmail && !preferences.subscribed)}
+        description="Om 16.00 uur, als er stickers vrij zijn die je zoekt en waar nog niemand om heeft gevraagd."
+        onChange={async (event) => {
+          const enabled = event.currentTarget.checked
+          setBusy(true)
+          setError('')
+          try { await subscribe({ enabled }) }
+          catch (cause) { setError(errorMessage(cause)) }
+          finally { setBusy(false) }
+        }} />
+      {!preferences.verifiedEmail && !preferences.subscribed && <Text size="sm">Log opnieuw in om ruilmails aan te zetten.</Text>}
+      {error && <Text role="alert" c="red">{error}</Text>}
+    </Stack>
+  </Paper>
+}
+
 export function SettingsPage({ state, update, demoKey, eraseAccount, usesDescope }: {
   state: DemoState
   update: Update
@@ -107,6 +136,7 @@ export function SettingsPage({ state, update, demoKey, eraseAccount, usesDescope
           </Stack>
         </Paper>
       </div>
+      {usesDescope && <DigestSettings />}
       {eraseAccount && (
         <Paper withBorder p="lg" className="account-removal">
           <Stack align="flex-start" gap="sm">

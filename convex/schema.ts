@@ -45,11 +45,14 @@ export default defineSchema({
     number: v.number(),
     status: v.union(v.literal('available'), v.literal('promised')),
     interestedCount: v.number(),
+    hadInterest: v.optional(v.boolean()),
     promisedTo: v.optional(v.id('collectors')),
   })
     .index('by_status', ['status'])
+    .index('by_status_and_number', ['status', 'number', 'interestedCount'])
     .index('by_owner', ['owner'])
     .index('by_promisedTo', ['promisedTo'])
+    .index('by_status_and_interestedCount', ['status', 'interestedCount'])
     .index('by_owner_and_number', ['owner', 'number']),
   interests: defineTable({
     offer: v.id('offers'),
@@ -78,4 +81,21 @@ export default defineSchema({
     clientId: v.string(),
     conversation: v.optional(v.id('conversations')),
   }).index('by_sender_and_clientId', ['sender', 'clientId']).index('by_conversation', ['conversation']),
+  digestSubscriptions: defineTable({
+    collector: v.id('collectors'),
+    email: v.string(),
+    unsubscribeToken: v.string(),
+    lastSent: v.optional(v.string()),
+  }).index('by_collector', ['collector']).index('by_unsubscribeToken', ['unsubscribeToken']).index('by_lastSent', ['lastSent']),
+  digestRounds: defineTable({
+    date: v.string(), cursor: v.union(v.null(), v.string()), dispatched: v.number(), finished: v.boolean(),
+  }).index('by_date', ['date']),
+  digestAttempts: defineTable({
+    collector: v.id('collectors'),
+    date: v.string(),
+  }).index('by_collector_and_date', ['collector', 'date']),
+  digestNotices: defineTable({
+    collector: v.id('collectors'),
+    offer: v.id('offers'),
+  }).index('by_collector_and_offer', ['collector', 'offer']),
 })

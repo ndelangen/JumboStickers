@@ -12,7 +12,9 @@ async function purgeConversations(ctx: MutationCtx, collector: Id<'collectors'>)
     ctx.db.query('conversations').withIndex('by_owner', (q) => q.eq('owner', collector)).take(5),
     ctx.db.query('conversations').withIndex('by_requester', (q) => q.eq('requester', collector)).take(5),
   ])
-  for (const { _id } of [...owned, ...requested]) {
+  for (const { _id, offer } of [...owned, ...requested]) {
+    const offered = await ctx.db.get('offers', offer)
+    if (offered && offered.hadInterest !== true) await ctx.db.patch('offers', offer, { hadInterest: true })
     const [messages, deliveries] = await Promise.all([
       ctx.db.query('unreadMessages').withIndex('by_conversation', (q) => q.eq('conversation', _id)).take(batchSize),
       ctx.db.query('messageDeliveries').withIndex('by_conversation', (q) => q.eq('conversation', _id)).take(batchSize),
@@ -33,7 +35,7 @@ async function purgeTrades(ctx: MutationCtx, collector: Id<'collectors'>) {
   ])
   for (const interest of outgoing) {
     const offer = await ctx.db.get('offers', interest.offer)
-    if (offer) await ctx.db.patch('offers', offer._id, { interestedCount: offer.interestedCount - 1 })
+    if (offer) await ctx.db.patch('offers', offer._id, { interestedCount: offer.interestedCount - 1, hadInterest: true })
     await ctx.db.delete('interests', interest._id)
   }
   for (const interest of incoming) await ctx.db.delete('interests', interest._id)
@@ -72,6 +74,8 @@ export const eraseOwn = mutation({
       throw new ConvexError('Je profiel is gewijzigd. Open Instellingen opnieuw.')
     }
     await ctx.db.patch('collectors', collector._id, { deleting: true, displayName: '', album: {}, digest: false })
+    const subscription = await ctx.db.query('digestSubscriptions').withIndex('by_collector', (q) => q.eq('collector', collector._id)).unique()
+    if (subscription) await ctx.db.delete('digestSubscriptions', subscription._id)
     await ctx.scheduler.runAfter(0, internal.account.purge, { collector: collector._id })
     return null
   },
@@ -91,7 +95,13 @@ export const purge = internalMutation({
     ])
     for (const message of messages) await ctx.db.delete('unreadMessages', message._id)
     for (const delivery of deliveries) await ctx.db.delete('messageDeliveries', delivery._id)
-    if (hasConversations || hasTrades || messages.length || deliveries.length) {
+    const [notices, attempts] = await Promise.all([
+      ctx.db.query('digestNotices').withIndex('by_collector_and_offer', (q) => q.eq('collector', collector)).take(batchSize),
+      ctx.db.query('digestAttempts').withIndex('by_collector_and_date', (q) => q.eq('collector', collector)).take(batchSize),
+    ])
+    for (const notice of notices) await ctx.db.delete('digestNotices', notice._id)
+    for (const attempt of attempts) await ctx.db.delete('digestAttempts', attempt._id)
+    if (hasConversations || hasTrades || messages.length || deliveries.length || notices.length || attempts.length) {
       await ctx.scheduler.runAfter(0, internal.account.purge, { collector })
     } else {
       await ctx.db.delete('collectors', collector)

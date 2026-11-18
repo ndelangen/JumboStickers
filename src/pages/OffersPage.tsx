@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Avatar, Button, Group, Modal, Paper, Stack, Text, TextInput, Title } from '@mantine/core'
 import { ArrowRight, Check, HandHeart, Search, Settings2 } from 'lucide-react'
 import { EmptyState, AlbumProgress, StatusStamp, StickerDetails, StickerNumber, PhotoCredit } from '../ui'
@@ -13,14 +13,22 @@ const filters = [
 ] as const
 type Filter = (typeof filters)[number]['id']
 
+export function requestedSticker() {
+  const value = new URLSearchParams(location.search).get('sticker')
+  const number = value && /^\d{1,3}$/u.test(value) ? Number(value) : 0
+  return number && stickerFor(number) ? String(number) : ''
+}
+
 export function OfferCover({ signedIn }: { signedIn: boolean }) {
+  const number = requestedSticker()
+  const join = number ? `/inloggen?sticker=${number}` : '/inloggen'
   return (
   <section className="album-cover" aria-labelledby="cover-title">
     <div className="cover-text">
       <p className="cover-kicker">Zwolle · De Stad Ontrafeld</p>
       <Title order={1} id="cover-title" tabIndex={-1}>Maak je album<br />compleet</Title>
       <Text>Vind de stickers die je nog zoekt en ruil je dubbelen met andere verzamelaars.</Text>
-      <Button component="a" href={signedIn ? '#aanbod' : '/inloggen'} color="ochre.4" c="dark.9"
+      <Button component="a" href={signedIn ? '#aanbod' : join} data-reload={!signedIn && !!number || undefined} color="ochre.4" c="dark.9"
         rightSection={<ArrowRight size={18} aria-hidden />}>{signedIn ? 'Bekijk de stickers' : 'Ik wil ook stickers ruilen'}</Button>
     </div>
     <div className="cover-photo" role="img" aria-label="De Peperbus en de binnenstad van Zwolle" />
@@ -35,12 +43,17 @@ export function OffersPage({ state, update, navigate, signedIn }: {
   signedIn: boolean
 }) {
   const [filter, setFilter] = useState<Filter>('available')
-  const [search, setSearch] = useState('')
+  const [linkedSticker, setLinkedSticker] = useState(requestedSticker)
+  const [search, setSearch] = useState(linkedSticker)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState('')
   const selected = state.offers.find((offer) => offer.id === selectedId)
   const doubles = myOffers(state)
+
+  useEffect(() => {
+    if (linkedSticker && location.hash === '#aanbod') document.getElementById('aanbod')?.scrollIntoView()
+  }, [linkedSticker])
 
   function canTrade(offer: Offer) {
     return state.album[offer.number] === 'wanted' && doubles.some((mine) =>
@@ -50,7 +63,7 @@ export function OffersPage({ state, update, navigate, signedIn }: {
 
   const offers = state.offers.filter((offer) => {
     const sticker = stickerFor(offer.number)
-    if (!sticker || !matchesSticker(sticker, search)) return false
+    if (!sticker || (linkedSticker ? sticker.number !== Number(linkedSticker) : !matchesSticker(sticker, search))) return false
     switch (filter) {
       case 'mine': return offer.owner === 'me'
       case 'interest': return offer.interested.includes('me')
@@ -91,7 +104,7 @@ export function OffersPage({ state, update, navigate, signedIn }: {
           <div className="browse-toolbar">
             <TextInput aria-label="Zoek in het aanbod op nummer of naam" placeholder="Zoek op nummer of naam"
               leftSection={<Search size={18} aria-hidden />}
-              value={search} onChange={(event) => setSearch(event.currentTarget.value)} />
+              value={search} onChange={(event) => { setLinkedSticker(''); setSearch(event.currentTarget.value) }} />
             <div className="filter-buttons" role="group" aria-label="Filter het aanbod">
               {filters.map(({ id, label }) => (
                 <Button key={id} size="compact-sm" variant={filter === id ? 'filled' : 'subtle'}

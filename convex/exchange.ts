@@ -33,21 +33,24 @@ function threadView(thread: Doc<'conversations'>, viewer: Id<'collectors'>) {
 }
 
 export const get = query({
-  args: {},
+  args: { sticker: v.optional(v.number()) },
   returns: v.union(snapshotValidator, v.null()),
-  handler: async (ctx) => {
+  handler: async (ctx, { sticker }) => {
     const me = await currentCollector(ctx)
     if (!me) return null
 
-    const [mine, available, fromMe, forMe, opened, received, inbox] = await Promise.all([
+    const [mine, general, linked, fromMe, forMe, opened, received, inbox] = await Promise.all([
       ownOffers(ctx, me._id),
       ctx.db.query('offers').withIndex('by_status', (q) => q.eq('status', 'available')).take(localNetworkLimit),
+      sticker === undefined ? [] : ctx.db.query('offers').withIndex('by_status_and_number', (q) =>
+        q.eq('status', 'available').eq('number', sticker)).take(50),
       ctx.db.query('interests').withIndex('by_collector', (q) => q.eq('collector', me._id)).take(localNetworkLimit),
       ctx.db.query('interests').withIndex('by_owner', (q) => q.eq('owner', me._id)).take(localNetworkLimit),
       ctx.db.query('conversations').withIndex('by_requester', (q) => q.eq('requester', me._id)).order('desc').take(localNetworkLimit),
       ctx.db.query('conversations').withIndex('by_owner', (q) => q.eq('owner', me._id)).order('desc').take(localNetworkLimit),
       ctx.db.query('unreadMessages').withIndex('by_recipient', (q) => q.eq('recipient', me._id)).take(inboxLimit),
     ])
+    const available = [...general, ...linked]
     const mineInterested = new Set(fromMe.map((item) => item.offer))
     const receivedInterests = new Map<Id<'offers'>, Id<'collectors'>[]>()
     for (const interest of forMe) {
@@ -144,7 +147,7 @@ async function markNumbers(ctx: MutationCtx, me: Doc<'collectors'>, input: numbe
   for (const number of changed) {
     if (status === 'clear') delete album[number]
     else album[number] = status === 'double' ? 'owned' : status
-    if (status === 'double') await ctx.db.insert('offers', { owner: me._id, number, status: 'available', interestedCount: 0 })
+    if (status === 'double') await ctx.db.insert('offers', { owner: me._id, number, status: 'available', interestedCount: 0, hadInterest: false })
   }
   await ctx.db.patch('collectors', me._id, { album })
   return { changed: changed.length, protectedCount: protectedNumbers.length }
@@ -208,7 +211,7 @@ export const update = mutation({
       if (offer.owner === me._id || (!interest && offer.status !== 'available')) throw new ConvexError('Dit exemplaar is niet beschikbaar.')
       if (!interest) {
         await ctx.db.insert('interests', { offer: offer._id, owner: offer.owner, collector: me._id })
-        await ctx.db.patch('offers', offer._id, { interestedCount: offer.interestedCount + 1 })
+        await ctx.db.patch('offers', offer._id, { interestedCount: offer.interestedCount + 1, hadInterest: true })
       }
       return await conversationFor(ctx, offer, me._id)
     }
@@ -217,7 +220,7 @@ export const update = mutation({
       const interest = await interestFor(ctx, offer._id, me._id)
       if (interest) {
         await ctx.db.delete('interests', interest._id)
-        await ctx.db.patch('offers', offer._id, { interestedCount: offer.interestedCount - 1 })
+        await ctx.db.patch('offers', offer._id, { interestedCount: offer.interestedCount - 1, hadInterest: true })
       }
       return null
     }
