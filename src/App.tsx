@@ -1,4 +1,4 @@
-import { Alert, Anchor, Badge, Button, Group, Loader, Paper, Text, Title } from '@mantine/core'
+import { Alert, Anchor, Badge, Button, Group, Loader, Paper, Text, Title, VisuallyHidden } from '@mantine/core'
 import { useConvexAuth, useMutation, useQuery } from 'convex/react'
 import { ArrowLeftRight, BookOpen, MessageCircle, Settings, Sticker as StickerIcon } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
@@ -10,6 +10,7 @@ import { AlbumPage } from './pages/AlbumPage'
 import { MessagesPage } from './pages/MessagesPage'
 import { SettingsPage, SignInPage } from './pages/AccountPages'
 import { EmptyState } from './ui'
+import { useUnreadMessages } from './useUnreadMessages'
 
 const links = [
   { href: '/ruilen', label: 'Ruilen', icon: ArrowLeftRight },
@@ -61,6 +62,8 @@ function App({ state, start, commit, markAlbum, historyKey, sendMessage, authSto
   const content = useRef<HTMLElement>(null)
   const shouldFocus = useRef(false)
   const area = activeArea(path)
+  const { arrival, unread } = useUnreadMessages(state?.inbox)
+  const unreadLabel = unread === 1 ? '1 ongelezen bericht' : `${unread} ongelezen berichten`
 
   useEffect(() => {
     if (state !== null) return
@@ -123,13 +126,21 @@ function App({ state, start, commit, markAlbum, historyKey, sendMessage, authSto
             <span className="brand-title">Stickerruil Zwolle</span>
           </Anchor>
           <nav aria-label="Hoofdnavigatie" className="site-nav">
-            {links.map(({ href, label, icon: Icon }) => (
-              <Button key={href} component="a" href={href} size="sm" variant={area === href ? 'light' : 'subtle'}
-                leftSection={<Icon size={18} aria-hidden />} aria-current={area === href ? 'page' : undefined}>
-                {label}
-              </Button>
-            ))}
+            {links.map(({ href, label, icon: Icon }) => {
+              const showUnread = href === '/berichten' && unread > 0
+              return (
+                <Button key={href} component="a" href={href} size="sm" variant={area === href ? 'light' : 'subtle'}
+                  aria-label={showUnread ? `${label}, ${unreadLabel}` : undefined} aria-current={area === href ? 'page' : undefined}
+                  leftSection={<span className="nav-icon" aria-hidden="true">
+                    <Icon size={18} />
+                    {showUnread && <span key={arrival} className="nav-unread">{unread > 99 ? '99+' : unread}</span>}
+                  </span>}>
+                  {label}
+                </Button>
+              )
+            })}
           </nav>
+          <VisuallyHidden role="status">{unread > 0 && <span key={arrival}>{unreadLabel}</span>}</VisuallyHidden>
         </div>
       </header>
       <div className="demo-strip">

@@ -65,7 +65,7 @@ export function MessagesPage({ state, threadId, demoKey, update, sendMessage }: 
               </>
             )}
             <Text mb="xs">We slaan de inhoud van je chatberichten tijdelijk op in onze database, zodat de ontvanger ze ook later kan openen. Zodra een bericht in de geopende chat van de ontvanger verschijnt en diens browser het heeft opgeslagen, verwijderen we het automatisch uit de actieve database.</Text>
-            <Text>De geschiedenis blijft staan in de browser waarin je het bericht verstuurt of leest. Je kunt die geschiedenis zelf wissen bij <Anchor href="/instellingen">Instellingen</Anchor>. Een eerdere back-up kan nog een kopie bevatten.</Text>
+            <Text>De geschiedenis blijft staan in de browser waarin je het bericht verstuurt of leest. Je kunt die geschiedenis zelf wissen bij <Anchor href="/instellingen">Instellingen</Anchor>.</Text>
           </Accordion.Panel>
         </Accordion.Item>
       </Accordion>
@@ -241,8 +241,13 @@ function Conversation({ state, thread, demoKey, update, sendMessage }: {
       <Stack p="md" gap="xs">
         {error && <Text role="alert" c="red">{error}</Text>}
         <form className="compose" onSubmit={(event) => { event.preventDefault(); void send() }}>
-          <Textarea aria-label="Bericht" placeholder="Schrijf een bericht" autosize minRows={1} maxRows={4}
-            maxLength={1000} value={draft} readOnly={!!sending} onChange={(event) => setDraft(event.currentTarget.value)} />
+          <Textarea aria-label="Bericht" placeholder="Schrijf een bericht" enterKeyHint="send" autosize minRows={1} maxRows={4}
+            maxLength={1000} value={draft} readOnly={!!sending} onChange={(event) => setDraft(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
+              event.preventDefault()
+              if (!event.repeat) event.currentTarget.form?.requestSubmit()
+            }} />
           <Button type="submit" disabled={!draft.trim()} loading={!!sending} leftSection={<Send size={16} aria-hidden />}>Verstuur</Button>
         </form>
         {!sendMessage && <Button variant="subtle" size="compact-sm" className="simulate-reply" loading={exampleBusy}

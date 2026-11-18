@@ -52,8 +52,41 @@ a:focus-visible {
   gap: 4px;
 }
 
+.site-nav .mantine-Button-root {
+  overflow: visible;
+}
+
 .site-nav [aria-current='page'] {
   color: var(--album-olive, var(--mantine-primary-color-filled));
+}
+
+.nav-icon {
+  position: relative;
+  display: inline-flex;
+}
+
+.nav-unread {
+  position: absolute;
+  inset: -7px -8px auto auto;
+  display: grid;
+  place-items: center;
+  min-width: 16px;
+  padding-inline: 3px;
+  height: 16px;
+  border: 1px solid var(--album-white);
+  border-radius: 999px;
+  background: var(--album-gold);
+  color: var(--album-ink);
+  font-size: .66rem;
+  font-weight: 700;
+  line-height: 1;
+  animation: unread-arrival 660ms ease-out 2;
+}
+
+@keyframes unread-arrival {
+  0%, 100% { transform: none; }
+  36% { transform: translateY(-2px) scale(1.17) rotate(-9deg); }
+  66% { transform: scale(.94) rotate(4deg); }
 }
 
 .album-cover {
@@ -492,6 +525,8 @@ a:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .nav-unread { animation: none; }
+
   .app-shell *, .app-shell *::before, .app-shell *::after {
     animation-duration: .01ms !important;
     transition-duration: .01ms !important;

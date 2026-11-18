@@ -11,7 +11,7 @@ Installeer de pakketten met `npm ci`. Start daarna twee terminals in deze map:
 
 De app gebruikt voorbeeldstickers. Open **Inloggen** en kies **Open Noor** en **Open Sam** om met twee proefaccounts te ruilen. Convex deelt hun aanbod, interesses en beloftes tussen de tabbladen. De losse demo werkt met voorbeeldgesprekken en bewaart wat je zelf typt alleen in de browser.
 
-Tussen proefaccounts bewaart Convex de berichttekst tot het bericht zichtbaar is in de chat van de ontvanger en diens browser het heeft opgeslagen. De gespreksgeschiedenis staat per account in de browser. Een oudere back-up kan nog berichttekst bevatten. Voor productie moet de inbox na herstel worden opgeschoond voordat de chat weer opengaat.
+Tussen proefaccounts bewaart Convex de berichttekst tot het bericht zichtbaar is in de chat van de ontvanger en diens browser het heeft opgeslagen. De gespreksgeschiedenis staat per account in de browser. Voor productie moet de inbox na herstel worden opgeschoond voordat de chat weer opengaat.
 
 Inloglinks en ruilmails zijn voorbeelden. Gebruik verzonnen gegevens.
 
