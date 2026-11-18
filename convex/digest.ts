@@ -21,7 +21,9 @@ function settings() {
 }
 
 function emailFor(identity: UserIdentity) {
-  return isDescopeSession(identity) && identity.emailVerified === true && identity.email &&
+  // Convex custom JWT providers expose this claim under its original name.
+  const verification = [identity.emailVerified, identity.email_verified].filter((claim) => claim !== undefined)
+  return isDescopeSession(identity) && verification.length > 0 && verification.every((claim) => claim === true) && identity.email &&
     /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/u.test(identity.email) ? identity.email : null
 }
 
