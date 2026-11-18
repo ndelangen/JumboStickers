@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { Avatar, Button, Group, Modal, Paper, Stack, Text, TextInput, Title } from '@mantine/core'
 import { ArrowRight, Check, HandHeart, Search, Settings2 } from 'lucide-react'
-import { EmptyState, AlbumProgress, StatusStamp, StickerNumber, PhotoCredit } from '../ui'
-import { interestLabel, myOffers, personFor, themeFor, type DemoState, type Offer, type Update } from '../demo'
+import { EmptyState, AlbumProgress, StatusStamp, StickerDetails, StickerNumber, PhotoCredit } from '../ui'
+import { interestLabel, myOffers, personFor, type DemoState, type Offer, type Update } from '../demo'
+import { matchesSticker, stickerFor } from '../catalog'
 
 const filters = [
   { id: 'available', label: 'Beschikbaar' },
@@ -33,7 +34,8 @@ export function OffersPage({ state, update, navigate, signedIn }: {
   }
 
   const offers = state.offers.filter((offer) => {
-    if (!String(offer.number).includes(search.trim())) return false
+    const sticker = stickerFor(offer.number)
+    if (!sticker || !matchesSticker(sticker, search)) return false
     switch (filter) {
       case 'mine': return offer.owner === 'me'
       case 'interest': return offer.interested.includes('me')
@@ -81,8 +83,8 @@ export function OffersPage({ state, update, navigate, signedIn }: {
             <Text c="dimmed" size="sm" aria-live="polite">{offers.length} {offers.length === 1 ? 'exemplaar' : 'exemplaren'}</Text>
           </div>
           <div className="browse-toolbar">
-            <TextInput aria-label="Zoek in het aanbod op stickernummer" placeholder="Zoek op stickernummer"
-              leftSection={<Search size={18} aria-hidden />} inputMode="numeric"
+            <TextInput aria-label="Zoek in het aanbod op nummer of naam" placeholder="Zoek op nummer of naam"
+              leftSection={<Search size={18} aria-hidden />}
               value={search} onChange={(event) => setSearch(event.currentTarget.value)} />
             <div className="filter-buttons" role="group" aria-label="Filter het aanbod">
               {filters.map(({ id, label }) => (
@@ -97,12 +99,13 @@ export function OffersPage({ state, update, navigate, signedIn }: {
             <div className="offers">
               {offers.map((offer) => {
                 const mine = offer.owner === 'me'
+                const sticker = stickerFor(offer.number)
                 const active = offer.interested.includes('me')
                 const owner = personFor(offer.owner, state)
                 const label = mine ? 'Beheer exemplaar' : active ? 'Bekijk gesprek' : 'Ik wil deze sticker'
                 return (
                   <Paper key={offer.id} className="offer paper-in" component="article" withBorder>
-                    <div className="offer-art" data-theme={themeFor(offer.number)}>
+                    <div className="offer-art" data-theme={sticker?.theme}>
                       <StickerNumber number={offer.number} />
                       {canTrade(offer) && <span className="trade-tag">Jullie kunnen ruilen</span>}
                     </div>
@@ -111,7 +114,10 @@ export function OffersPage({ state, update, navigate, signedIn }: {
                         <Title order={3}>Sticker {offer.number}</Title>
                         <StatusStamp color={offer.promisedTo ? 'ochre' : 'olive'}>{offer.promisedTo ? 'Beloofd' : 'Beschikbaar'}</StatusStamp>
                       </Group>
-                      {themeFor(offer.number) && <Text c="dimmed" size="sm">{themeFor(offer.number)}</Text>}
+                      {sticker && <div>
+                        <Text fw={600} lh={1.2}>{sticker.title}</Text>
+                        <Text c="dimmed" size="xs" mt={3}>{sticker.theme} · pagina {sticker.page}</Text>
+                      </div>}
                       <Group gap={8} className="offer-person" wrap="nowrap">
                         <Avatar size={34} color="ochre" aria-hidden>{owner.initials}</Avatar>
                         <div><Text size="sm" fw={700}>{mine ? state.displayName : owner.name}</Text><Text size="sm" c="dimmed">{interestLabel(offer.interestCount ?? offer.interested.length)}</Text></div>
@@ -139,6 +145,7 @@ export function OffersPage({ state, update, navigate, signedIn }: {
 
       <Modal opened={!!selected} onClose={() => setSelectedId(null)} centered
         title={selected ? `Sticker ${selected.number}` : ''} closeButtonProps={{ 'aria-label': 'Sluit stickerdetails' }}>
+        {selected && <div className="offer-sticker-details"><StickerDetails number={selected.number} /></div>}
         {selected?.owner === 'me' ? (
           <Stack>
             {selected.promisedTo ? (

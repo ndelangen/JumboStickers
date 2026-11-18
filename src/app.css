@@ -404,7 +404,11 @@ a:focus-visible {
 .album-collection { grid-area: collection; }
 .album-list { grid-area: list; }
 .album-feedback { min-height: 26px; padding-top: 4px; }
+.album-theme + .album-theme { margin-top: 18px; }
+.album-theme h2 { font-size: 1.15rem; margin-bottom: 8px; }
 .album-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(81px, 1fr)); gap: 8px; }
+.album-grid[data-results] { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
+.offer-sticker-details { margin-bottom: 14px; }
 .album-cell {
   display: grid;
   justify-items: center;
@@ -423,6 +427,7 @@ a:focus-visible {
 .album-cell:active { transform: scale(.96); }
 .album-cell:focus-visible { outline: 3px solid var(--album-olive); outline-offset: 2px; }
 .album-cell strong { font: 700 1.5rem/1.05 var(--mantine-font-family-headings); }
+.cell-title { font-size: .85rem; line-height: 1.2; text-wrap: pretty; overflow-wrap: anywhere; }
 .album-cell[data-status='owned'] { background: #efeee4; border-style: solid; border-color: #d0cdbd; }
 .album-cell[data-status='owned'] .cell-state { color: var(--album-muted); font-weight: 600; }
 .album-cell[data-status='double'] { background: #dce5df; border-style: solid; border-color: #97ab9d; }

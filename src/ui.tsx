@@ -1,7 +1,8 @@
 import { Badge, Button, Group, Paper, Progress, Text, Title } from '@mantine/core'
 import { ArrowRight, BookOpen, Sticker as StickerIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { albumSize, type DemoState } from './demo'
+import { albumSize, stickerFor } from './catalog'
+import type { DemoState } from './demo'
 
 export function PageHeading({ title, description, side }: { title: string; description?: string; side?: ReactNode }) {
   return (
@@ -17,6 +18,18 @@ export function PageHeading({ title, description, side }: { title: string; descr
 
 export function StickerNumber({ number }: { number: number }) {
   return <span className="sticker-ticket" aria-hidden="true">{number}</span>
+}
+
+export function StickerDetails({ number }: { number: number }) {
+  const sticker = stickerFor(number)
+  if (!sticker) return null
+  return (
+    <div>
+      <Text fw={700}>{sticker.title}</Text>
+      <Text size="sm" c="dimmed">{sticker.theme} · pagina {sticker.page}</Text>
+      <Text size="sm" c="dimmed">{sticker.section}</Text>
+    </div>
+  )
 }
 
 export function StatusStamp({ children, color = 'olive' }: { children: ReactNode; color?: 'olive' | 'ochre' | 'gray' }) {

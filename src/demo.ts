@@ -1,6 +1,7 @@
 import type { FunctionArgs, FunctionReturnType } from 'convex/server'
 import { ConvexError } from 'convex/values'
 import { api } from '../convex/_generated/api'
+import { albumSize } from './catalog'
 
 export type DemoState = NonNullable<FunctionReturnType<typeof api.demo.get>> & {
   people?: NonNullable<FunctionReturnType<typeof api.exchange.get>>['people']
@@ -18,9 +19,6 @@ export function errorMessage(error: unknown) {
     : 'Opslaan is niet gelukt. Probeer het nog eens.'
 }
 
-export const albumSize = 175
-export const catalog = Array.from({ length: albumSize }, (_, index) => index + 1)
-
 const people: Record<string, { name: string; initials: string; wants: number[] }> = {
   noor: { name: 'Noor V.', initials: 'NV', wants: [12, 57] },
   sam: { name: 'Sam B.', initials: 'SB', wants: [57] },
@@ -37,11 +35,6 @@ export function personFor(id: string, state: DemoState) {
 
 function initialsFor(name: string) {
   return name.split(/\s+/u).slice(0, 2).map((word) => word[0]).join('').toUpperCase()
-}
-
-const samples: Record<number, string> = { 34: 'Water', 80: 'Knooppunten', 126: 'Thuis', 151: 'Samenleven' }
-export function themeFor(number: number) {
-  return samples[number]
 }
 
 export function myOffers(state: DemoState, number?: number) {
