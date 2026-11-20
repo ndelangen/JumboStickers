@@ -1,4 +1,4 @@
-import { paginationOptsValidator, paginationResultValidator } from 'convex/server'
+import { paginationOptsValidator, paginationResultValidator, type PaginationResult } from 'convex/server'
 import { v, type Infer } from 'convex/values'
 import { EmptyStream, mergedStream, SingletonStream, stream } from 'convex-helpers/server/stream'
 import type { Doc } from './_generated/dataModel'
@@ -40,10 +40,11 @@ export const list = query({
     numbers: v.union(v.null(), v.array(v.number())),
     districts: searchDistrictsValidator,
     prioritizeMatches: v.optional(v.boolean()),
+    indexedInterests: v.optional(v.boolean()),
     paginationOpts: paginationOptsValidator,
   },
   returns: paginationResultValidator(listing),
-  handler: async (ctx, { filter, numbers, districts, prioritizeMatches, paginationOpts }) => {
+  handler: async (ctx, { filter, numbers, districts, prioritizeMatches, indexedInterests, paginationOpts }) => {
     const collector = await currentCollector(ctx)
     if (!collector || numbers?.length === 0) return { page: [], isDone: true, continueCursor: '' }
 
@@ -71,7 +72,7 @@ export const list = query({
       const canTrade = item.status === 'available' && album[item.number] === 'wanted' &&
         tradableNumbers.some((number) => owner.album[number] === 'wanted')
       if (matchFilter !== undefined && canTrade !== matchFilter) return null
-      const interested = knownInterest || await hasInterest(item)
+      const interested = knownInterest || (item.interestedCount > 0 && await hasInterest(item))
       return {
         offer: {
           id: item._id,
@@ -94,15 +95,46 @@ export const list = query({
     }
     const available = indexedOffers(ctx, scope, 'available')
     if (filter === 'interest') {
+      const boundary = indexedInterests ? options.cursor ?? options.endCursor : null
+      const useInterestIndex = indexedInterests && (boundary
+        ? boundary.startsWith('i:')
+        : !await ctx.db.query('interests').withIndex('by_collector_and_number', (q) =>
+          q.eq('collector', viewer).eq('number', undefined)).first())
+      const interestOptions = indexedInterests ? {
+        ...options,
+        cursor: options.cursor ? options.cursor.slice(2) : null,
+        endCursor: options.endCursor ? options.endCursor.slice(2) : options.endCursor,
+      } : options
+      const prefix = useInterestIndex ? 'i:' : 'o:'
+      function withInterestCursor(result: PaginationResult<Infer<typeof listing>>) {
+        if (!indexedInterests) return result
+        return {
+          ...result,
+          continueCursor: prefix + result.continueCursor,
+          ...(result.splitCursor ? { splitCursor: prefix + result.splitCursor } : {}),
+        }
+      }
+      if (useInterestIndex) {
+        const numbers = scope && new Set(scope)
+        const result = await stream(ctx.db, schema).query('interests')
+          .withIndex('by_collector_and_number', (q) => q.eq('collector', viewer))
+          .map(async (item) => {
+            if (item.number === undefined || (numbers && !numbers.has(item.number))) return null
+            const offer = await ctx.db.get('offers', item.offer)
+            return offer && offer.owner !== viewer ? marketListing(offer, true) : null
+          }).paginate(interestOptions)
+        return withInterestCursor(result)
+      }
       const interest = await ctx.db.query('interests').withIndex('by_collector', (q) => q.eq('collector', viewer)).first()
       if (!interest) return { page: [], isDone: true, continueCursor: '' }
       const promised = indexedOffers(ctx, scope, 'promised')
-      return mergedStream([available, promised], offerOrder)
+      const result = await mergedStream([available, promised], offerOrder)
         .map(async (item) => {
           if (item.owner === viewer || item.interestedCount === 0 || !await hasInterest(item)) return null
           return marketListing(item, true)
         })
-        .paginate(options)
+        .paginate(interestOptions)
+      return withInterestCursor(result)
     }
     if (prioritizeMatches) {
       const wanted = tradableNumbers.length

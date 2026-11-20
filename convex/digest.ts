@@ -1,4 +1,5 @@
 import { paginationOptsValidator, type UserIdentity } from 'convex/server'
+import { mergedStream, stream } from 'convex-helpers/server/stream'
 import { ConvexError, v } from 'convex/values'
 import { internal } from './_generated/api'
 import type { Doc, Id } from './_generated/dataModel'
@@ -6,6 +7,7 @@ import { internalAction, internalMutation, internalQuery, mutation, query, type 
 import { currentCollector, isDescopeSession, requireCollector } from './collectors'
 import { inboxLimit, unreadRetentionMs } from './inbox'
 import { composeDigest } from './digestMail'
+import schema from './schema'
 import { isUnsubscribeToken } from '../shared/digestLinks'
 
 const timezone = 'Europe/Amsterdam'
@@ -170,21 +172,27 @@ async function eligible(ctx: Pick<QueryCtx, 'db'>, collector: Doc<'collectors'>,
 }
 
 export const candidates = internalQuery({
-  args: { subscription: v.id('digestSubscriptions'), date: v.string(), pagination: paginationOptsValidator },
+  args: { subscription: v.id('digestSubscriptions'), date: v.string(), pagination: paginationOptsValidator, indexed: v.optional(v.boolean()) },
   returns: v.union(v.null(), v.object({
     offers: v.array(v.object({ id: v.id('offers'), number: v.number() })), wanted: v.number(), cursor: v.string(), done: v.boolean(),
   })),
-  handler: async (ctx, { subscription, date, pagination }) => {
+  handler: async (ctx, { subscription, date, pagination, indexed }) => {
     const contact = await ctx.db.get('digestSubscriptions', subscription)
     if (!contact || contact.tradesEnabled === false) return null
     const collector = await ctx.db.get('collectors', contact.collector)
     if (!collector || collector.deleting) return null
     if (await ctx.db.query('digestAttempts').withIndex('by_collector_and_date', (q) =>
       q.eq('collector', collector._id).eq('date', date)).unique()) return null
-    const wanted = Object.values(collector.album).filter((status) => status === 'wanted').length
-    if (!wanted) return null
-    const result = await ctx.db.query('offers').withIndex('by_status_and_interestedCount', (q) =>
-      q.eq('status', 'available').eq('interestedCount', 0)).paginate(pagination)
+    const wantedNumbers = Object.keys(collector.album).map(Number).filter((number) => collector.album[number] === 'wanted')
+    if (!wantedNumbers.length) return null
+    // Keep the original cursor format for email actions that started before the deploy.
+    const result = indexed
+      ? await mergedStream(wantedNumbers.map((number) =>
+        stream(ctx.db, schema).query('offers').withIndex('by_status_and_number', (q) =>
+          q.eq('status', 'available').eq('number', number).eq('interestedCount', 0)),
+      ), ['_creationTime', '_id']).paginate(pagination)
+      : await ctx.db.query('offers').withIndex('by_status_and_interestedCount', (q) =>
+        q.eq('status', 'available').eq('interestedCount', 0)).paginate(pagination)
     const offers: { id: Id<'offers'>, number: number }[] = []
     const included = new Set<number>()
     for (const offer of result.page) {
@@ -192,7 +200,7 @@ export const candidates = internalQuery({
       included.add(offer.number)
       offers.push({ id: offer._id, number: offer.number })
     }
-    return { offers, wanted, cursor: result.continueCursor, done: result.isDone }
+    return { offers, wanted: wantedNumbers.length, cursor: result.continueCursor, done: result.isDone }
   },
 })
 
@@ -304,7 +312,7 @@ export const deliverPage = internalAction({
         let cursor: string | null = null
         while (true) {
           const candidates: { offers: { id: Id<'offers'>, number: number }[], wanted: number, cursor: string, done: boolean } | null =
-            await ctx.runQuery(internal.digest.candidates, { subscription, date: page.date, pagination: { cursor, numItems: 100 } })
+            await ctx.runQuery(internal.digest.candidates, { subscription, date: page.date, indexed: true, pagination: { cursor, numItems: 100 } })
           if (!candidates) break
           for (const { id, number } of candidates.offers) if (!offers.has(number)) offers.set(number, id)
           if (candidates.done || offers.size >= candidates.wanted) break
