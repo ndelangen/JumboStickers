@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { Alert, Button, Group, Modal, Stack, Text, Textarea, TextInput, Title } from '@mantine/core'
-import { CopyPlus, Search } from 'lucide-react'
+import { CopyMinus, CopyPlus, Search } from 'lucide-react'
 import { albumSize, catalog, matchesSticker, themes } from '../catalog'
 import { errorMessage, myOffers, parseStickerNumbers, type BulkMark as ApplyBulkMark, type Command, type DemoState, type Update } from '../demo'
 import { AlbumProgress, EmptyState, PageHeading, StatusStamp, StickerDetails } from '../ui'
@@ -20,6 +20,7 @@ export function AlbumPage({ state, update, markAlbum }: { state: DemoState; upda
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [selected, setSelected] = useState<number | null>(null)
+  const [removalOfferId, setRemovalOfferId] = useState<string | null>(null)
   const [batchStatus, setBatchStatus] = useState<BatchStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState('')
@@ -27,13 +28,17 @@ export function AlbumPage({ state, update, markAlbum }: { state: DemoState; upda
   const bulkLauncher = useRef<HTMLButtonElement | null>(null)
   const selectedTile = useRef<HTMLButtonElement | null>(null)
   const searchField = useRef<HTMLInputElement | null>(null)
+  const addDoubleButton = useRef<HTMLButtonElement | null>(null)
+  const removeDoubleButton = useRef<HTMLButtonElement | null>(null)
   const doubleCounts = new Map<number, number>()
   for (const offer of myOffers(state)) doubleCounts.set(offer.number, (doubleCounts.get(offer.number) ?? 0) + 1)
   const showTitles = !!search.trim()
   const stickers = catalog.filter((sticker) => matchesSticker(sticker, search) &&
     (filter === 'all' || (filter === 'double' ? doubleCounts.has(sticker.number) : state.album[sticker.number] === filter)))
   const copies = selected === null ? [] : myOffers(state, selected)
-  const canRemove = copies.some((offer) => !offer.promisedTo && offer.interested.length === 0)
+  const availableCopies = copies.filter((offer) => !offer.promisedTo)
+  const freeCopy = availableCopies.find((offer) => (offer.interestCount ?? offer.interested.length) === 0)
+  const removableCopy = freeCopy ?? availableCopies[0]
 
   function openBatch(status: BatchStatus, launcher: HTMLButtonElement) {
     bulkLauncher.current = launcher
@@ -45,13 +50,19 @@ export function AlbumPage({ state, update, markAlbum }: { state: DemoState; upda
     requestAnimationFrame(() => bulkLauncher.current?.focus({ preventScroll: true }))
   }
 
+  function restoreRemovalFocus() {
+    requestAnimationFrame(() => (removeDoubleButton.current ?? addDoubleButton.current)?.focus())
+  }
+
   async function save(command: Command, label: string, close = true) {
     setBusy(true)
     setSingleError(null)
     try {
       await update(command, { inlineError: true })
       setFeedback(label)
+      setRemovalOfferId(null)
       if (close) setSelected(null)
+      else restoreRemovalFocus()
     } catch (cause) {
       setSingleError(errorMessage(cause))
     } finally { setBusy(false) }
@@ -105,6 +116,7 @@ export function AlbumPage({ state, update, markAlbum }: { state: DemoState; upda
                         aria-label={`Sticker ${number}, ${title}, ${badge || 'nog niet ingevuld'}`} onClick={(event) => {
                           selectedTile.current = event.currentTarget
                           setSingleError(null)
+                          setRemovalOfferId(null)
                           setSelected(number)
                         }}>
                         <strong>{number}</strong>
@@ -135,7 +147,7 @@ export function AlbumPage({ state, update, markAlbum }: { state: DemoState; upda
                 </StatusStamp></Group>
               )}
 
-            <Button fullWidth leftSection={<CopyPlus size={21} aria-hidden />} disabled={busy}
+            <Button ref={addDoubleButton} fullWidth leftSection={<CopyPlus size={21} aria-hidden />} disabled={busy || !!removalOfferId}
               onClick={() => void save({ type: 'album', numbers: [selected], status: 'double' }, `Sticker ${selected} staat in je aanbod.`)}>
               {copies.length ? 'Bied nog een dubbel aan' : 'Ik heb deze dubbel'}
             </Button>
@@ -147,21 +159,43 @@ export function AlbumPage({ state, update, markAlbum }: { state: DemoState; upda
               Zoek ik
             </Button>
 
-            <Group className="collection-actions" gap="xs">
-              {!copies.length && state.album[selected] !== 'owned' && (
+            {!copies.length && <Group className="collection-actions" gap="xs">
+              {state.album[selected] !== 'owned' && (
                 <Button size="sm" variant="subtle" disabled={busy}
                   onClick={() => void save({ type: 'album', numbers: [selected], status: 'owned' }, `Sticker ${selected} staat in je album.`)}>Alleen afvinken</Button>
               )}
-              {!copies.length && state.album[selected] && (
+              {state.album[selected] && (
                 <Button size="sm" variant="subtle" color="gray" disabled={busy}
                   onClick={() => void save({ type: 'album', numbers: [selected], status: 'clear' }, `Sticker ${selected} is weer leeg.`)}>Markering wissen</Button>
               )}
-              {!!copies.length && canRemove && (
-                <Button size="sm" variant="subtle" disabled={busy}
-                  onClick={() => void save({ type: 'removeDouble', number: selected }, 'Eén exemplaar uit je aanbod gehaald.', false)}>Haal één dubbel uit aanbod</Button>
-              )}
-            </Group>
-            {!!copies.length && !canRemove && <Text size="sm" c="dimmed">Dit aanbod heeft interesse of is beloofd. Bekijk het bij ‘Mijn aanbod’.</Text>}
+            </Group>}
+            {removalOfferId ? (
+              <Alert color="ochre" title="Iemand heeft interesse">
+                <Stack gap="xs">
+                  <Text size="sm">Dit exemplaar verdwijnt uit je aanbod. Bestaande gesprekken blijven staan.</Text>
+                  <Group gap="xs">
+                    <Button size="sm" variant="default" disabled={busy} autoFocus onClick={() => {
+                      setRemovalOfferId(null)
+                      setSingleError(null)
+                      restoreRemovalFocus()
+                    }}>Annuleren</Button>
+                    <Button size="sm" color="red" loading={busy}
+                      onClick={() => void save({ type: 'removeDouble', number: selected, offerId: removalOfferId, confirmInterest: true },
+                        'Eén exemplaar uit je aanbod gehaald.', false)}>Trek aanbod in</Button>
+                  </Group>
+                </Stack>
+              </Alert>
+            ) : removableCopy ? (
+              <Button ref={removeDoubleButton} fullWidth variant="outline" color="red" leftSection={<CopyMinus size={20} aria-hidden />}
+                disabled={busy} onClick={() => {
+                  if (freeCopy) {
+                    void save({ type: 'removeDouble', number: selected, offerId: freeCopy.id }, 'Eén exemplaar uit je aanbod gehaald.', false)
+                  } else {
+                    setSingleError(null)
+                    setRemovalOfferId(removableCopy.id)
+                  }
+                }}>Verwijder één dubbel</Button>
+            ) : !!copies.length && <Text size="sm" c="dimmed">Je dubbelen zijn beloofd. Geef eerst een exemplaar vrij bij ‘Mijn aanbod’.</Text>}
             {singleError && <Alert color="red" role="alert">{singleError}</Alert>}
           </Stack>
         )}

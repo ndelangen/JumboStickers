@@ -10,7 +10,12 @@ type State = Infer<typeof stateValidator>
 
 export const exchangeCommand = v.union(
   v.object({ type: v.literal('album'), numbers: v.array(v.number()), status: v.union(albumStatus, v.literal('double'), v.literal('clear')) }),
-  v.object({ type: v.literal('removeDouble'), number: v.number() }),
+  v.object({
+    type: v.literal('removeDouble'),
+    number: v.number(),
+    offerId: v.optional(v.string()),
+    confirmInterest: v.optional(v.literal(true)),
+  }),
   v.object({ type: v.literal('want'), offerId: v.string() }),
   v.object({ type: v.literal('withdraw'), offerId: v.string() }),
   v.object({ type: v.literal('promise'), offerId: v.string(), person: v.union(v.string(), v.null()), expectedRecipient: v.optional(v.string()) }),
@@ -143,9 +148,18 @@ export const update = mutation({
     }
 
     if (change.type === 'removeDouble') {
-      const index = offers.findIndex((offer) => offer.owner === 'me' && offer.number === change.number &&
-        !offer.promisedTo && offer.interested.length === 0)
-      if (index === -1) throw new ConvexError('Dit exemplaar heeft al interesse of is beloofd.')
+      if (change.confirmInterest && !change.offerId) throw new ConvexError('Kies eerst welk exemplaar je wilt verwijderen.')
+      const index = offers.findIndex((offer) => change.offerId === undefined
+        ? offer.owner === 'me' && offer.number === change.number && !offer.promisedTo && offer.interested.length === 0
+        : offer.id === change.offerId)
+      if (index === -1) {
+        if (change.offerId !== undefined) return null
+        throw new ConvexError('Dit exemplaar heeft al interesse of is beloofd.')
+      }
+      const copy = offers[index]
+      if (copy.owner !== 'me' || copy.number !== change.number) throw new ConvexError('Dit exemplaar is niet meer beschikbaar.')
+      if (copy.promisedTo) throw new ConvexError('Geef dit exemplaar eerst vrij bij ‘Mijn aanbod’.')
+      if (copy.interested.length && !change.confirmInterest) throw new ConvexError('Iemand heeft interesse. Bevestig dat je dit aanbod wilt intrekken.')
       offers.splice(index, 1)
       await ctx.db.patch(row._id, { offers })
       return null
