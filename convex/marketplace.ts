@@ -1,6 +1,6 @@
 import { paginationOptsValidator, paginationResultValidator } from 'convex/server'
-import { v } from 'convex/values'
-import { mergedStream, stream } from 'convex-helpers/server/stream'
+import { v, type Infer } from 'convex/values'
+import { EmptyStream, mergedStream, SingletonStream, stream } from 'convex-helpers/server/stream'
 import type { Doc } from './_generated/dataModel'
 import { query, type QueryCtx } from './_generated/server'
 import { offerLimit, validNumbers } from './album'
@@ -39,17 +39,18 @@ export const list = query({
     filter: v.union(v.literal('available'), v.literal('interest')),
     numbers: v.union(v.null(), v.array(v.number())),
     districts: searchDistrictsValidator,
+    prioritizeMatches: v.optional(v.boolean()),
     paginationOpts: paginationOptsValidator,
   },
   returns: paginationResultValidator(listing),
-  handler: async (ctx, { filter, numbers, districts, paginationOpts }) => {
+  handler: async (ctx, { filter, numbers, districts, prioritizeMatches, paginationOpts }) => {
     const collector = await currentCollector(ctx)
     if (!collector || numbers?.length === 0) return { page: [], isDone: true, continueCursor: '' }
 
     const { _id: viewer, album } = collector
     const scope = numbers === null ? null : validNumbers(numbers)
     const ownOffers = await ctx.db.query('offers').withIndex('by_owner', (q) => q.eq('owner', viewer)).take(offerLimit)
-    const tradableNumbers = new Set(ownOffers.filter((item) => item.status === 'available').map((item) => item.number))
+    const tradableNumbers = [...new Set(ownOffers.filter((item) => item.status === 'available').map((item) => item.number))]
     const profiles = new Map<Doc<'collectors'>['_id'], Promise<Doc<'collectors'> | null>>()
 
     const selectedDistricts = new Set(filter === 'available' ? districts : [])
@@ -59,7 +60,7 @@ export const list = query({
         (q) => q.eq('offer', item._id).eq('collector', viewer)).unique()
     }
 
-    async function marketListing(item: Doc<'offers'>, knownInterest = false) {
+    async function marketListing(item: Doc<'offers'>, knownInterest = false, matchFilter?: boolean) {
       let profile = profiles.get(item.owner)
       if (!profile) {
         profile = ctx.db.get('collectors', item.owner)
@@ -67,6 +68,9 @@ export const list = query({
       }
       const owner = await profile
       if (!owner || owner.deleting || (selectedDistricts.size && (!owner.district || !selectedDistricts.has(owner.district)))) return null
+      const canTrade = item.status === 'available' && album[item.number] === 'wanted' &&
+        tradableNumbers.some((number) => owner.album[number] === 'wanted')
+      if (matchFilter !== undefined && canTrade !== matchFilter) return null
       const interested = knownInterest || await hasInterest(item)
       return {
         offer: {
@@ -79,8 +83,7 @@ export const list = query({
         },
         displayName: owner.displayName,
         district: owner.district,
-        canTrade: item.status === 'available' && album[item.number] === 'wanted' &&
-          [...tradableNumbers].some((number) => owner.album[number] === 'wanted'),
+        canTrade,
       }
     }
 
@@ -100,6 +103,23 @@ export const list = query({
           return marketListing(item, true)
         })
         .paginate(options)
+    }
+    if (prioritizeMatches) {
+      const wanted = tradableNumbers.length
+        ? (scope ?? Object.keys(album).map(Number)).filter((number) => album[number] === 'wanted')
+        : []
+      // Use a composite cursor so both tiers can paginate in sticker-number order.
+      const tierOrder = ['_id']
+      const tiers = mergedStream([true, false].map((matches) => {
+        const key = [matches ? '0-matches' : '1-other']
+        return new SingletonStream({ matches }, 'asc', tierOrder, key, key)
+      }), tierOrder)
+      return tiers.flatMap<Infer<typeof listing>>(async ({ matches }) => {
+        if (matches && !wanted.length) return new EmptyStream('asc', offerOrder)
+        const candidates = matches ? indexedOffers(ctx, wanted, 'available') : available
+        return mergedStream([candidates], offerOrder)
+          .map(async (item) => item.owner === viewer ? null : marketListing(item, false, matches))
+      }, offerOrder).paginate(options)
     }
     return available
       .map(async (item) => item.owner === viewer ? null : marketListing(item))
