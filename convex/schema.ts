@@ -65,9 +65,11 @@ export default defineSchema({
     offer: v.id('offers'),
     owner: v.id('collectors'),
     collector: v.id('collectors'),
+    number: v.optional(v.number()),
   })
     .index('by_offer_and_collector', ['offer', 'collector'])
     .index('by_collector', ['collector'])
+    .index('by_collector_and_number', ['collector', 'number'])
     .index('by_owner', ['owner']),
   conversations: defineTable({
     offer: v.id('offers'),
@@ -96,6 +98,7 @@ export default defineSchema({
     .index('by_recipient', ['recipient'])
     .index('by_recipient_and_conversation', ['recipient', 'conversation'])
     .index('by_conversation', ['conversation']),
+  unreadExpiry: defineTable({ dueAt: v.number() }),
   messageBlocks: defineTable({
     blocker: v.id('collectors'),
     blocked: v.id('collectors'),

@@ -6,7 +6,7 @@ import { batchAlbumArgs, offerLimit, validNumbers } from './album'
 import { inboxLimit, unreadRetentionMs } from './inbox'
 import { exchangeCommand } from './demo'
 import { currentCollector, requireCollector } from './collectors'
-import { demoStateFields } from './schema'
+import { demoStateFields, incoming, offer as offerValidator } from './schema'
 import { districtValidator, uniqueDistricts } from './districts'
 
 const peopleValidator = v.record(v.string(), v.object({
@@ -14,7 +14,12 @@ const peopleValidator = v.record(v.string(), v.object({
   wants: v.array(v.number()),
   district: v.optional(districtValidator),
 }))
-const snapshotValidator = v.object({ ...demoStateFields, people: peopleValidator, collectorId: v.id('collectors') })
+const snapshotValidator = v.object({
+  ...demoStateFields,
+  people: peopleValidator,
+  collectorId: v.id('collectors'),
+  unread: v.optional(v.array(v.object({ id: v.id('unreadMessages'), threadId: v.id('conversations') }))),
+})
 const unreadPerSender = 5
 const expiryBatchSize = 500
 const interestCleanupBatchSize = 100
@@ -48,25 +53,38 @@ function threadView(thread: Doc<'conversations'>, viewer: Id<'collectors'>) {
 }
 
 export const get = query({
-  args: { sticker: v.optional(v.number()), personalOnly: v.optional(v.boolean()) },
+  args: {
+    sticker: v.optional(v.number()),
+    personalOnly: v.optional(v.boolean()),
+    view: v.optional(v.union(v.literal('shell'), v.literal('album'), v.literal('offers'), v.literal('messages'))),
+  },
   returns: v.union(snapshotValidator, v.null()),
-  handler: async (ctx, { sticker, personalOnly }) => {
+  handler: async (ctx, { sticker, personalOnly, view }) => {
     const me = await currentCollector(ctx)
     if (!me) return null
 
-    const [mine, general, linked, fromMe, forMe, opened, received, inbox] = await Promise.all([
-      ownOffers(ctx, me._id),
-      personalOnly ? [] : ctx.db.query('offers').withIndex('by_status', (q) => q.eq('status', 'available')).take(localNetworkLimit),
-      personalOnly || sticker === undefined ? [] : ctx.db.query('offers').withIndex('by_status_and_number', (q) =>
-        q.eq('status', 'available').eq('number', sticker)).take(50),
-      ctx.db.query('interests').withIndex('by_collector', (q) => q.eq('collector', me._id)).take(localNetworkLimit),
-      ctx.db.query('interests').withIndex('by_owner', (q) => q.eq('owner', me._id)).take(localNetworkLimit),
-      ctx.db.query('conversations').withIndex('by_requester_and_requesterHidden_and_requesterVisibleSince',
-        (q) => q.eq('requester', me._id).eq('requesterHidden', undefined)).order('desc').take(localNetworkLimit),
-      ctx.db.query('conversations').withIndex('by_owner_and_ownerHidden_and_ownerVisibleSince',
-        (q) => q.eq('owner', me._id).eq('ownerHidden', undefined)).order('desc').take(localNetworkLimit),
-      ctx.db.query('unreadMessages').withIndex('by_recipient', (q) => q.eq('recipient', me._id)).take(inboxLimit),
+    const legacy = view === undefined
+    const wantsThreads = legacy || view === 'messages'
+    const wantsOwnOffers = legacy || view === 'offers' || view === 'album'
+    const wantsInterests = legacy || view === 'offers'
+    const readInbox = () => ctx.db.query('unreadMessages').withIndex('by_recipient', (q) =>
+      q.eq('recipient', me._id)).take(inboxLimit)
+    const [mine, general, linked, fromMe, forMe, opened, received, pending] = await Promise.all([
+      wantsOwnOffers ? ownOffers(ctx, me._id) : [],
+      legacy && !personalOnly ? ctx.db.query('offers').withIndex('by_status', (q) => q.eq('status', 'available')).take(localNetworkLimit) : [],
+      legacy && !personalOnly && sticker !== undefined ? ctx.db.query('offers').withIndex('by_status_and_number', (q) =>
+        q.eq('status', 'available').eq('number', sticker)).take(50) : [],
+      legacy ? ctx.db.query('interests').withIndex('by_collector', (q) => q.eq('collector', me._id)).take(localNetworkLimit) : [],
+      wantsInterests ? ctx.db.query('interests').withIndex('by_owner', (q) => q.eq('owner', me._id)).take(localNetworkLimit) : [],
+      wantsThreads ? ctx.db.query('conversations').withIndex('by_requester_and_requesterHidden_and_requesterVisibleSince',
+        (q) => q.eq('requester', me._id).eq('requesterHidden', undefined)).order('desc').take(localNetworkLimit) : [],
+      wantsThreads ? ctx.db.query('conversations').withIndex('by_owner_and_ownerHidden_and_ownerVisibleSince',
+        (q) => q.eq('owner', me._id).eq('ownerHidden', undefined)).order('desc').take(localNetworkLimit) : [],
+      legacy || view === 'shell' ? readInbox() : [],
     ])
+    const inbox = view === 'messages' && (opened.length === localNetworkLimit || received.length === localNetworkLimit)
+      ? await readInbox()
+      : pending
     const available = [...general, ...linked]
     const mineInterested = new Set(fromMe.map((item) => item.offer))
     const receivedInterests = new Map<Id<'offers'>, Id<'collectors'>[]>()
@@ -95,7 +113,7 @@ export const get = query({
       ...offerOwners,
       ...forMe.map((interest) => interest.collector),
       ...candidates.map((thread) => thread.person),
-      ...mine.flatMap((offer) => offer.promisedTo ? [offer.promisedTo] : []),
+      ...(view === 'album' ? [] : mine.flatMap((offer) => offer.promisedTo ? [offer.promisedTo] : [])),
     ])
     related.delete(me._id)
     const profiles = (await Promise.all([...related].map((id) => ctx.db.get('collectors', id))))
@@ -103,6 +121,7 @@ export const get = query({
     const active = new Set(profiles.map((profile) => profile._id))
     const threads = candidates.filter((thread) => active.has(thread.person))
     const threadVersions = new Map(threads.map((thread) => [thread.id, thread.historyVersion]))
+    const visibleInbox = inbox.filter((message) => threadVersions.has(message.conversation))
     return {
       collectorId: me._id,
       displayName: me.displayName,
@@ -114,7 +133,7 @@ export const get = query({
         const district = offerOwners.has(profile._id) ? profile.district : undefined
         return [profile._id, {
           name: profile.displayName,
-          wants: [...ownAvailableNumbers].filter((number) => profile.album[number] === 'wanted'),
+          wants: legacy ? [...ownAvailableNumbers].filter((number) => profile.album[number] === 'wanted') : [],
           ...(district ? { district } : {}),
         }]
       })),
@@ -125,17 +144,20 @@ export const get = query({
         interested: offer.owner === me._id ? (receivedInterests.get(offer._id) ?? []).filter((person) => active.has(person)) :
           mineInterested.has(offer._id) ? ['me'] : [],
         interestCount: offer.interestedCount,
-        promisedTo: offer.promisedTo === me._id ? 'me' : offer.owner === me._id ? offer.promisedTo && active.has(offer.promisedTo) ? offer.promisedTo : null :
-          offer.status === 'promised' ? 'reserved' : null,
+        promisedTo: view === 'album' ? (offer.status === 'promised' ? 'reserved' : null) :
+          offer.promisedTo === me._id ? 'me' : offer.owner === me._id ? offer.promisedTo && active.has(offer.promisedTo) ? offer.promisedTo : null :
+            offer.status === 'promised' ? 'reserved' : null,
       })),
-      threads,
-      inbox: inbox.filter((message) => threadVersions.has(message.conversation)).map((message) => ({
-        id: message._id, threadId: message.conversation, text: message.text, sentAt: message._creationTime,
-        historyVersion: threadVersions.get(message.conversation),
-      })),
+      threads: wantsThreads ? threads : [],
+      inbox: legacy ? visibleInbox.map((message) => inboxMessage(message, threadVersions.get(message.conversation))) : [],
+      unread: view === 'shell' ? visibleInbox.map((message) => ({ id: message._id, threadId: message.conversation })) : undefined,
     }
   },
 })
+
+function inboxMessage(message: Doc<'unreadMessages'>, historyVersion: number | undefined) {
+  return { id: message._id, threadId: message.conversation, text: message.text, sentAt: message._creationTime, historyVersion }
+}
 
 function messageBlock(ctx: QueryCtx | MutationCtx, blocker: Id<'collectors'>, blocked: Id<'collectors'>) {
   return ctx.db.query('messageBlocks').withIndex('by_blocker_and_blocked',
@@ -161,11 +183,13 @@ async function messagesFrom(ctx: MutationCtx, recipient: Id<'collectors'>, sende
 }
 
 export const getConversation = query({
-  args: { threadId: v.string() },
+  args: { threadId: v.string(), includeMessages: v.optional(v.boolean()) },
   returns: v.union(v.null(), v.object({
     id: v.id('conversations'), offerId: v.id('offers'), number: v.number(), person: v.id('collectors'), name: v.string(), blocked: v.boolean(), historyVersion: v.optional(v.number()),
+    inbox: v.optional(v.array(incoming)),
+    offer: v.optional(offerValidator),
   })),
-  handler: async (ctx, { threadId }) => {
+  handler: async (ctx, { threadId, includeMessages }) => {
     const me = await currentCollector(ctx)
     const id = ctx.db.normalizeId('conversations', threadId)
     const thread = id && await ctx.db.get('conversations', id)
@@ -174,7 +198,24 @@ export const getConversation = query({
     const view = threadView(thread, me._id)
     const person = await ctx.db.get('collectors', view.person)
     if (!person || person.deleting) return null
-    return { ...view, name: person.displayName, blocked: !!await messageBlock(ctx, me._id, view.person) }
+    const [blocked, pending, offer] = await Promise.all([
+      messageBlock(ctx, me._id, view.person),
+      includeMessages ? ctx.db.query('unreadMessages').withIndex('by_recipient_and_conversation', (q) =>
+        q.eq('recipient', me._id).eq('conversation', thread._id)).take(inboxLimit) : undefined,
+      includeMessages ? ctx.db.get('offers', thread.offer) : null,
+    ])
+    const interested = offer && thread.requester === me._id && await interestFor(ctx, offer._id, me._id)
+    return {
+      ...view,
+      name: person.displayName,
+      blocked: !!blocked,
+      inbox: pending?.map((message) => inboxMessage(message, view.historyVersion)),
+      offer: offer ? {
+        id: offer._id, number: offer.number, owner: offer.owner === me._id ? 'me' : offer.owner,
+        interested: interested ? ['me'] : [],
+        promisedTo: offer.promisedTo === me._id ? 'me' : offer.status === 'promised' ? 'reserved' : null,
+      } : undefined,
+    }
   },
 })
 
@@ -234,7 +275,7 @@ async function showConversation(ctx: MutationCtx, thread: Doc<'conversations'>, 
   }
 }
 
-async function interestFor(ctx: MutationCtx, offer: Id<'offers'>, collector: Id<'collectors'>) {
+async function interestFor(ctx: MutationCtx | QueryCtx, offer: Id<'offers'>, collector: Id<'collectors'>) {
   return ctx.db.query('interests').withIndex('by_offer_and_collector', (q) => q.eq('offer', offer).eq('collector', collector)).unique()
 }
 
@@ -332,7 +373,7 @@ export const update = mutation({
       const interest = await interestFor(ctx, offer._id, me._id)
       if (offer.owner === me._id || (!interest && offer.status !== 'available')) throw new ConvexError('Dit exemplaar is niet beschikbaar.')
       if (!interest) {
-        await ctx.db.insert('interests', { offer: offer._id, owner: offer.owner, collector: me._id })
+        await ctx.db.insert('interests', { offer: offer._id, owner: offer.owner, collector: me._id, number: offer.number })
         await ctx.db.patch('offers', offer._id, { interestedCount: offer.interestedCount + 1, hadInterest: true })
       }
       return await conversationFor(ctx, offer, me._id, me._id)
@@ -439,6 +480,8 @@ export const send = mutation({
     const queued = await ctx.db.query('unreadMessages').withIndex('by_recipient', (q) => q.eq('recipient', recipient)).take(inboxLimit)
     if (queued.length >= inboxLimit) throw new ConvexError('De inbox van deze verzamelaar zit vol. Probeer het later opnieuw.')
     await ctx.db.insert('unreadMessages', { conversation: conversation._id, recipient, sender: me._id, text: body })
+    const expiry = await ctx.db.query('unreadExpiry').unique()
+    if (!expiry) await scheduleUnreadExpiry(ctx, null)
     await showConversation(ctx, conversation, recipient)
     const delivery = await ctx.db.insert('messageDeliveries', { sender: me._id, clientId, conversation: conversation._id })
     await ctx.scheduler.runAfter(resendWindowMs + 60_000, internal.exchange.forgetDelivery, { delivery })
@@ -455,15 +498,45 @@ export const forgetDelivery = internalMutation({
   },
 })
 
+async function scheduleUnreadExpiry(ctx: MutationCtx, expiry: Doc<'unreadExpiry'> | null) {
+  const oldest = await ctx.db.query('unreadMessages').withIndex('by_creation_time').first()
+  if (!oldest) {
+    if (expiry) await ctx.db.delete('unreadExpiry', expiry._id)
+    return
+  }
+  const dueAt = oldest._creationTime + unreadRetentionMs
+  if (expiry) await ctx.db.patch('unreadExpiry', expiry._id, { dueAt })
+  else await ctx.db.insert('unreadExpiry', { dueAt })
+  await ctx.scheduler.runAt(Math.max(Date.now(), dueAt), internal.exchange.expireUnreadMessages, { dueAt })
+}
+
 export const expireUnreadMessages = internalMutation({
-  args: {},
+  args: { dueAt: v.optional(v.number()) },
   returns: v.null(),
-  handler: async (ctx) => {
-    const cutoff = Date.now() - unreadRetentionMs
+  handler: async (ctx, { dueAt }) => {
+    const expiry = await ctx.db.query('unreadExpiry').unique()
+    const now = Date.now()
+    if (dueAt !== undefined ? expiry?.dueAt !== dueAt : expiry && expiry.dueAt > now) return null
     const expired = await ctx.db.query('unreadMessages').withIndex('by_creation_time',
-      (q) => q.lte('_creationTime', cutoff)).take(expiryBatchSize)
+      (q) => q.lte('_creationTime', now - unreadRetentionMs)).take(expiryBatchSize)
     for (const message of expired) await ctx.db.delete('unreadMessages', message._id)
-    if (expired.length === expiryBatchSize) await ctx.scheduler.runAfter(0, internal.exchange.expireUnreadMessages, {})
+    await scheduleUnreadExpiry(ctx, expiry)
+    return null
+  },
+})
+
+export const backfillInterestNumbers = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  returns: v.null(),
+  handler: async (ctx, { cursor }) => {
+    const page = await ctx.db.query('interests').paginate({ cursor: cursor ?? null, numItems: 100 })
+    for (const interest of page.page) {
+      if (interest.number !== undefined) continue
+      const offer = await ctx.db.get('offers', interest.offer)
+      if (offer) await ctx.db.patch('interests', interest._id, { number: offer.number })
+      else await ctx.db.delete('interests', interest._id)
+    }
+    if (!page.isDone) await ctx.scheduler.runAfter(0, internal.exchange.backfillInterestNumbers, { cursor: page.continueCursor })
     return null
   },
 })
