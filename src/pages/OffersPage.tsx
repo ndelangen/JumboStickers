@@ -71,6 +71,7 @@ export function OffersPage({ state, update, navigate, signedIn }: {
     filter: filter === 'interest' ? 'interest' : 'available',
     numbers: scope,
     districts: isBrowsing ? districts : [],
+    prioritizeMatches: isBrowsing || undefined,
   } : 'skip', { initialNumItems: pageSize })
   const more = useMarketplace && (market.status === 'CanLoadMore' || market.status === 'LoadingMore')
   const loading = useMarketplace && market.status === 'LoadingFirstPage'
@@ -109,7 +110,12 @@ export function OffersPage({ state, update, navigate, signedIn }: {
       case 'wanted': return offer.owner !== 'me' && !offer.promisedTo && state.album[offer.number] === 'wanted'
       case 'available': return offer.owner !== 'me' && !offer.promisedTo
     }
-  }).sort((first, second) => first.number - second.number)
+  })
+  if (!useMarketplace) {
+    offers.sort((first, second) =>
+      (isBrowsing ? Number(canTrade(second)) - Number(canTrade(first)) : 0) || first.number - second.number,
+    )
+  }
   const selected = offers.find((offer) => offer.id === selectedId)
 
   async function handle(updateCall: () => Promise<unknown>) {
