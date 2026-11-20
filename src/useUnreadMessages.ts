@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { DemoState } from './demo'
 
 function playChime(audio: AudioContext) {
   const start = audio.currentTime
@@ -18,7 +17,7 @@ function playChime(audio: AudioContext) {
   }
 }
 
-export function useUnreadMessages(inbox: DemoState['inbox'] | undefined) {
+export function useUnreadMessages(inbox: { id: string }[] | undefined) {
   const [arrival, setArrival] = useState(0)
   const previous = useRef(new Set<string>())
   const waiting = useRef(new Set<string>())

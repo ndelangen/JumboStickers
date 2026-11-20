@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Accordion, Anchor, Avatar, Button, Group, Modal, Paper, Stack, Text, Textarea, Title } from '@mantine/core'
 import { ArrowLeft, ArrowUpRight, Ban, Send, Sticker as StickerIcon, Trash2 } from 'lucide-react'
-import { useMutation, useQuery } from 'convex/react'
+import { useMutation } from 'convex/react'
+import type { FunctionReturnType } from 'convex/server'
 import { api } from '../../convex/_generated/api'
 import { localHistory, removeThreadWithHistory, saveLocalMessage, watchLocalHistory, type LocalMessage } from '../chatStorage'
 import { errorMessage, personFor, type DemoState, type SendMessage, type Thread, type Update } from '../demo'
 import { EmptyState, PageHeading, StatusStamp } from '../ui'
 
-export function MessagesPage({ state, threadId, demoKey, update, sendMessage, navigate }: {
+export function MessagesPage({ state, threadId, selected, demoKey, update, sendMessage, navigate }: {
   state: DemoState
   threadId?: string
+  selected?: FunctionReturnType<typeof api.exchange.getConversation>
   demoKey: string
   update: Update
   sendMessage?: SendMessage
@@ -18,7 +20,6 @@ export function MessagesPage({ state, threadId, demoKey, update, sendMessage, na
   const [removal, setRemoval] = useState<{ thread: Thread, name: string, removed: boolean } | null>(null)
   const [removing, setRemoving] = useState(false)
   const [removalError, setRemovalError] = useState('')
-  const selected = useQuery(api.exchange.getConversation, sendMessage && threadId ? { threadId } : 'skip')
   const setMessageBlock = useMutation(api.exchange.setMessageBlock)
   const messaging = selected ? {
     blocked: selected.blocked,
@@ -26,9 +27,18 @@ export function MessagesPage({ state, threadId, demoKey, update, sendMessage, na
   } : undefined
   const listed = state.threads.find((thread) => thread.id === threadId)
   const older = listed ? undefined : selected
-  const active = listed ?? older
+  const active = sendMessage ? selected : listed
   const threads = older ? [...state.threads, older] : state.threads
-  const viewState = older ? { ...state, people: { ...state.people, [older.person]: { name: older.name, wants: [] } } } : state
+  const viewState = selected ? {
+    ...state,
+    inbox: selected.inbox ?? [],
+    offers: selected.offer ? [selected.offer] : [],
+    people: { ...state.people, [selected.person]: { name: selected.name, wants: [] } },
+  } : state
+  const unreadByThread = new Map<string, number>()
+  for (const { threadId: unreadThread } of state.unread ?? state.inbox) {
+    unreadByThread.set(unreadThread, (unreadByThread.get(unreadThread) ?? 0) + 1)
+  }
 
   async function removeConversation() {
     if (!removal || removing) return
@@ -62,7 +72,7 @@ export function MessagesPage({ state, threadId, demoKey, update, sendMessage, na
         <div className="messages-layout" data-thread-open={!!active}>
           <Paper withBorder component="nav" aria-label="Gesprekken" className="thread-list">
             {threads.map((thread) => {
-              const unread = state.inbox.filter((message) => message.threadId === thread.id).length
+              const unread = unreadByThread.get(thread.id) ?? 0
               const person = personFor(thread.person, viewState)
               return (
                 <a key={thread.id} href={`/berichten/${thread.id}`} className="thread-link"

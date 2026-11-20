@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
+import { useQuery } from 'convex/react'
 import { usePaginatedQuery } from 'convex-helpers/react'
 import { Avatar, Button, Group, Modal, Paper, Stack, Text, TextInput, Title } from '@mantine/core'
+import { useDebouncedValue } from '@mantine/hooks'
 import { ArrowLeftRight, ArrowRight, Check, HandHeart, Search, Settings2 } from 'lucide-react'
 import type { District } from '../../convex/districts'
 import { SearchDistrictsField } from '../DistrictFields'
@@ -57,11 +59,15 @@ export function OffersPage({ state, update, navigate, signedIn }: {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState('')
-  const searchText = search.trim()
+  const [debouncedSearch] = useDebouncedValue(search.trim(), 250)
+  const searchText = signedIn ? debouncedSearch : search.trim()
   function matchesSearch(sticker: (typeof catalog)[number]) {
     return linkedSticker ? sticker.number === Number(linkedSticker) : matchesSticker(sticker, searchText)
   }
 
+  const loadOwnOffers = signedIn && filter === 'mine'
+  const ownOffers = useQuery(api.exchange.get, loadOwnOffers ? { view: 'offers' } : 'skip')
+  const viewState = ownOffers ?? state
   const useMarketplace = signedIn && filter !== 'mine'
   const scope = filter === 'wanted' || linkedSticker || searchText
     ? catalog.filter((sticker) => matchesSearch(sticker) &&
@@ -72,11 +78,12 @@ export function OffersPage({ state, update, navigate, signedIn }: {
     numbers: scope,
     districts: isBrowsing ? districts : [],
     prioritizeMatches: isBrowsing || undefined,
+    indexedInterests: filter === 'interest' || undefined,
   } : 'skip', { initialNumItems: pageSize })
   const more = useMarketplace && (market.status === 'CanLoadMore' || market.status === 'LoadingMore')
-  const loading = useMarketplace && market.status === 'LoadingFirstPage'
+  const loading = (loadOwnOffers && ownOffers === undefined) || (useMarketplace && market.status === 'LoadingFirstPage')
   const listings = new Map<string, (typeof market.results)[number]>(market.results.map((item) => [item.offer.id, item]))
-  const doubles = myOffers(state)
+  const doubles = myOffers(viewState)
 
   useEffect(() => {
     if (linkedSticker && location.hash === '#aanbod') document.getElementById('aanbod')?.scrollIntoView()
@@ -87,21 +94,21 @@ export function OffersPage({ state, update, navigate, signedIn }: {
     const listing = listings.get(offer.id)
     if (listing) return listing.canTrade
     return state.album[offer.number] === 'wanted' && doubles.some((mine) =>
-      !mine.promisedTo && personFor(offer.owner, state).wants.includes(mine.number),
+      !mine.promisedTo && personFor(offer.owner, viewState).wants.includes(mine.number),
     )
   }
 
   function offerName(offer: Offer) {
-    return listings.get(offer.id)?.displayName ?? personFor(offer.owner, state).name
+    return listings.get(offer.id)?.displayName ?? personFor(offer.owner, viewState).name
   }
 
-  const source = useMarketplace ? market.results.map(({ offer }) => offer) : state.offers
+  const source = useMarketplace ? market.results.map(({ offer }) => offer) : viewState.offers
   const offers = source.filter((offer) => {
     if (useMarketplace) return true
     const sticker = stickerFor(offer.number)
     if (!sticker || !matchesSearch(sticker)) return false
     if (isBrowsing && districts.length) {
-      const district = personFor(offer.owner, state).district
+      const district = personFor(offer.owner, viewState).district
       if (!district || !districts.includes(district)) return false
     }
     switch (filter) {
@@ -124,7 +131,7 @@ export function OffersPage({ state, update, navigate, signedIn }: {
   }
 
   async function openThread(offer: Offer, person?: string) {
-    const existing = state.threads.find((thread) => thread.offerId === offer.id && thread.person === (person ?? offer.owner))
+    const existing = viewState.threads.find((thread) => thread.offerId === offer.id && thread.person === (person ?? offer.owner))
     if (existing && (person || offer.interested.includes('me'))) {
       setSelectedId(null)
       navigate(`/berichten/${existing.id}`)
@@ -174,7 +181,7 @@ export function OffersPage({ state, update, navigate, signedIn }: {
                 const active = offer.interested.includes('me')
                 const ownerName = offerName(offer)
                 const listing = listings.get(offer.id)
-                const ownerDistrict = listing ? listing.district : personFor(offer.owner, state).district
+                const ownerDistrict = listing ? listing.district : personFor(offer.owner, viewState).district
                 const label = mine ? 'Beheer exemplaar' : active ? 'Bekijk gesprek' : 'Ik wil deze sticker'
                 return (
                   <Paper key={offer.id} className="offer paper-in" data-match={match || undefined} component="article" withBorder>
@@ -235,7 +242,7 @@ export function OffersPage({ state, update, navigate, signedIn }: {
           <Stack>
             {selected.promisedTo ? (
               <>
-                <Text>Beloofd aan <strong>{personFor(selected.promisedTo, state).name}</strong></Text>
+                <Text>Beloofd aan <strong>{personFor(selected.promisedTo, viewState).name}</strong></Text>
                 <Button variant="outline" disabled={busy} onClick={() => {
                   const person = selected.promisedTo
                   if (person) void handle(() => openThread(selected, person))
@@ -253,9 +260,9 @@ export function OffersPage({ state, update, navigate, signedIn }: {
                 {selected.interested.length === 0 && <Text c="dimmed">Zodra iemand de sticker wil, verschijnt die persoon hier.</Text>}
                 {selected.interested.map((person) => (
                   <Paper key={person} withBorder p="sm">
-                    <Text fw={700} mb={6}>{personFor(person, state).name}</Text>
+                    <Text fw={700} mb={6}>{personFor(person, viewState).name}</Text>
                     <Group gap="xs">
-                      <Button size="compact-sm" loading={busy} onClick={() => void handle(() => update({ type: 'promise', offerId: selected.id, person }))}>Beloof aan {personFor(person, state).name.split(' ')[0]}</Button>
+                      <Button size="compact-sm" loading={busy} onClick={() => void handle(() => update({ type: 'promise', offerId: selected.id, person }))}>Beloof aan {personFor(person, viewState).name.split(' ')[0]}</Button>
                       <Button size="compact-sm" variant="light" disabled={busy} onClick={() => void handle(() => openThread(selected, person))}>Open gesprek</Button>
                     </Group>
                   </Paper>
