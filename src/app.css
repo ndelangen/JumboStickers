@@ -397,19 +397,25 @@ body:has(#nl-badge-frame) .site-footer-inner { padding-block-end: 72px; }
 .offer-body > .mantine-Button-root { margin-top: auto; }
 .offer-art { flex: 0 0 auto; min-width: 0; }
 .sticker-ticket { margin-top: -7px; }
-.offer-art:has(.trade-tag) .sticker-ticket { margin-top: -21px; }
+.offer[data-match] { border-color: #8c974f; }
 
-.trade-tag {
-  position: absolute;
-  right: 8px;
-  bottom: 6px;
-  padding: 2px 7px;
-  color: #3d3111;
-  background: #f2db8e;
-  transform: rotate(-2deg);
-  font-size: .73rem;
+.trade-match {
+  padding: 7px 10px 8px;
+  color: #fffef9;
+  background: var(--album-olive);
+  line-height: 1.12;
+}
+.trade-match span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 1rem;
   font-weight: 700;
-  border-radius: 3px;
+}
+.trade-match small {
+  display: block;
+  margin-top: 3px;
+  font-size: .82rem;
 }
 
 .paper-in { animation: paper-in 230ms ease-out both; }
@@ -541,7 +547,6 @@ body:has(#nl-badge-frame) .site-footer-inner { padding-block-end: 72px; }
   .album-grid { grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap: 6px; }
   .album-cell { min-height: 66px; }
   .offer-art { height: 82px; }
-  .trade-tag { right: 5px; bottom: 5px; font-size: .69rem; }
   .filter-buttons { gap: 2px; }
   .filter-buttons .mantine-Button-root { flex: 1 0 auto; padding-inline: 6px; }
   .browse-toolbar .filter-buttons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }

@@ -17,6 +17,7 @@ const peopleValidator = v.record(v.string(), v.object({
 const snapshotValidator = v.object({ ...demoStateFields, people: peopleValidator, collectorId: v.id('collectors') })
 const unreadPerSender = 5
 const expiryBatchSize = 500
+const interestCleanupBatchSize = 100
 const localNetworkLimit = 3 * offerLimit
 const resendWindowMs = 24 * 60 * 60 * 1000
 
@@ -237,6 +238,24 @@ async function interestFor(ctx: MutationCtx, offer: Id<'offers'>, collector: Id<
   return ctx.db.query('interests').withIndex('by_offer_and_collector', (q) => q.eq('offer', offer).eq('collector', collector)).unique()
 }
 
+async function clearOfferInterests(ctx: MutationCtx, offer: Id<'offers'>) {
+  const interests = await ctx.db.query('interests').withIndex('by_offer_and_collector',
+    (q) => q.eq('offer', offer)).take(interestCleanupBatchSize + 1)
+  for (const interest of interests.slice(0, interestCleanupBatchSize)) await ctx.db.delete('interests', interest._id)
+  if (interests.length > interestCleanupBatchSize) {
+    await ctx.scheduler.runAfter(0, internal.exchange.cleanupOfferInterests, { offer })
+  }
+}
+
+export const cleanupOfferInterests = internalMutation({
+  args: { offer: v.id('offers') },
+  returns: v.null(),
+  handler: async (ctx, { offer }) => {
+    await clearOfferInterests(ctx, offer)
+    return null
+  },
+})
+
 export const update = mutation({
   args: { command: exchangeCommand },
   returns: v.union(v.string(), v.null()),
@@ -283,9 +302,23 @@ export const update = mutation({
     }
     if (command.type === 'exampleReply') throw new ConvexError('Stuur een bericht vanaf het andere proefaccount.')
     if (command.type === 'removeDouble') {
-      const offers = await ctx.db.query('offers').withIndex('by_owner_and_number',
+      if (command.confirmInterest && !command.offerId) throw new ConvexError('Kies eerst welk exemplaar je wilt verwijderen.')
+      if (command.offerId !== undefined) {
+        const copy = await ctx.db.get('offers', idFor(ctx, 'offers', command.offerId))
+        if (!copy) return null
+        if (copy.owner !== me._id || copy.number !== command.number) throw new ConvexError('Dit exemplaar is niet meer beschikbaar.')
+        if (copy.status !== 'available') throw new ConvexError('Geef dit exemplaar eerst vrij bij ‘Mijn aanbod’.')
+        if (copy.interestedCount > 0 && !command.confirmInterest) {
+          throw new ConvexError('Iemand heeft interesse. Bevestig dat je dit aanbod wilt intrekken.')
+        }
+        await ctx.db.delete('offers', copy._id)
+        await clearOfferInterests(ctx, copy._id)
+        return null
+      }
+
+      const copies = await ctx.db.query('offers').withIndex('by_owner_and_number',
         (q) => q.eq('owner', me._id).eq('number', command.number)).take(offerLimit)
-      const free = offers.find((offer) => offer.status === 'available' && offer.interestedCount === 0)
+      const free = copies.find((copy) => copy.status === 'available' && copy.interestedCount === 0)
       if (!free) throw new ConvexError('Dit exemplaar heeft al interesse of is beloofd.')
       await ctx.db.delete('offers', free._id)
       return null
@@ -322,9 +355,8 @@ export const update = mutation({
     if (command.type === 'finish') {
       const recipient = offer.promisedTo && await ctx.db.get('collectors', offer.promisedTo)
       if (!recipient || recipient.deleting) throw new ConvexError('De afspraak is gewijzigd. Open het aanbod opnieuw.')
-      const interests = await ctx.db.query('interests').withIndex('by_offer_and_collector', (q) => q.eq('offer', offer._id)).take(localNetworkLimit)
-      for (const interest of interests) await ctx.db.delete('interests', interest._id)
       await ctx.db.delete('offers', offer._id)
+      await clearOfferInterests(ctx, offer._id)
       return null
     }
     if (command.type === 'promise' && command.person === null) {

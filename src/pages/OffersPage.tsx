@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { usePaginatedQuery } from 'convex-helpers/react'
 import { Avatar, Button, Group, Modal, Paper, Stack, Text, TextInput, Title } from '@mantine/core'
-import { ArrowRight, Check, HandHeart, Search, Settings2 } from 'lucide-react'
+import { ArrowLeftRight, ArrowRight, Check, HandHeart, Search, Settings2 } from 'lucide-react'
 import type { District } from '../../convex/districts'
 import { SearchDistrictsField } from '../DistrictFields'
 import { EmptyState, AlbumProgress, StatusStamp, StickerDetails, StickerNumber, PhotoCredit } from '../ui'
@@ -82,6 +82,7 @@ export function OffersPage({ state, update, navigate, signedIn }: {
   }, [linkedSticker])
 
   function canTrade(offer: Offer) {
+    if (offer.owner === 'me' || offer.promisedTo) return false
     const listing = listings.get(offer.id)
     if (listing) return listing.canTrade
     return state.album[offer.number] === 'wanted' && doubles.some((mine) =>
@@ -162,6 +163,7 @@ export function OffersPage({ state, update, navigate, signedIn }: {
             <div className="offers">
               {offers.map((offer) => {
                 const mine = offer.owner === 'me'
+                const match = canTrade(offer)
                 const sticker = stickerFor(offer.number)
                 const active = offer.interested.includes('me')
                 const ownerName = offerName(offer)
@@ -169,11 +171,14 @@ export function OffersPage({ state, update, navigate, signedIn }: {
                 const ownerDistrict = listing ? listing.district : personFor(offer.owner, state).district
                 const label = mine ? 'Beheer exemplaar' : active ? 'Bekijk gesprek' : 'Ik wil deze sticker'
                 return (
-                  <Paper key={offer.id} className="offer paper-in" component="article" withBorder>
+                  <Paper key={offer.id} className="offer paper-in" data-match={match || undefined} component="article" withBorder>
                     <div className="offer-art" data-theme={sticker?.theme}>
                       <StickerNumber number={offer.number} />
-                      {canTrade(offer) && <span className="trade-tag">Jullie kunnen ruilen</span>}
                     </div>
+                    {match && <div className="trade-match">
+                      <span><ArrowLeftRight size={16} aria-hidden /> Ruilmatch</span>
+                      <small>Jullie hebben allebei een sticker die de ander zoekt.</small>
+                    </div>}
                     <div className="offer-body">
                       <Group justify="space-between" gap={6}>
                         <Title order={3}>Sticker {offer.number}</Title>
