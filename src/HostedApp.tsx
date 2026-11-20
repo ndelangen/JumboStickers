@@ -97,7 +97,7 @@ function HostedExchange({ flowId }: { flowId: string }) {
   const session = useSession()
   const { logout } = useDescope()
   const { isAuthenticated, isLoading } = useConvexAuth()
-  const state = useQuery(api.exchange.get, isAuthenticated ? { personalOnly: true } : 'skip')
+  const state = useQuery(api.exchange.get, isAuthenticated ? { view: 'shell' } : 'skip')
   const subject = session.claims?.sub
   const collectorId = state?.collectorId
   const register = useMutation(api.account.registerOwn)
@@ -175,7 +175,7 @@ function HostedExchange({ flowId }: { flowId: string }) {
         action={<Button onClick={() => void signOut()}>Log opnieuw in</Button>}>Vraag een nieuwe inloglink aan.</EmptyState> :
         login
   return <App state={state} commit={update} markAlbum={markAlbum} historyKey={state ? `hosted:${state.collectorId}` : ''}
-    sendMessage={state ? sendMessage : undefined} eraseAccount={state ? eraseAccount : undefined}
+    connected={isAuthenticated} sendMessage={state ? sendMessage : undefined} eraseAccount={state ? eraseAccount : undefined}
     hosted={{ signIn, landing: !isLoading && !session.isSessionLoading && !session.isAuthenticated ?
       <><OfferCover signedIn={false} /><PhotoCredit /></> : undefined, notice: <>
       {state && session.isAuthenticated && <UnreadReminderBanner key={state.collectorId} />}

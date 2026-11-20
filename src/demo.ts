@@ -5,6 +5,7 @@ import { albumSize } from './catalog'
 
 export type DemoState = NonNullable<FunctionReturnType<typeof api.demo.get>> & {
   people?: NonNullable<FunctionReturnType<typeof api.exchange.get>>['people']
+  unread?: NonNullable<FunctionReturnType<typeof api.exchange.get>>['unread']
 }
 export type Command = FunctionArgs<typeof api.demo.update>['command']
 export type Offer = DemoState['offers'][number]

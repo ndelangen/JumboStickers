@@ -58,7 +58,7 @@ export function DemoApp() {
 
 export function ExchangeApp({ selection }: { selection: LocalSelection }) {
   const { isLoading, isAuthenticated } = useConvexAuth()
-  const state = useQuery(api.exchange.get, isAuthenticated ? { personalOnly: true } : 'skip')
+  const state = useQuery(api.exchange.get, isAuthenticated ? { view: 'shell' } : 'skip')
   const mutate = useMutation(api.exchange.update)
   const markAlbum = useMutation(api.exchange.markAlbum)
   const sendMessage = useMutation(api.exchange.send)
@@ -68,7 +68,7 @@ export function ExchangeApp({ selection }: { selection: LocalSelection }) {
     return <FinishAccountRemoval historyKey={selection.session.historyKey} signOut={clearLocalSession} />
   }
   return <App state={state} commit={update} markAlbum={markAlbum} eraseAccount={() => eraseAccount({})}
-    sendMessage={sendMessage} historyKey={selection.session?.historyKey ?? `local:${selection.account}`}
+    sendMessage={sendMessage} connected={isAuthenticated} historyKey={selection.session?.historyKey ?? `local:${selection.account}`}
     authStopped={!isLoading && !isAuthenticated} />
 }
 
@@ -108,7 +108,7 @@ export function FinishAccountRemoval({ historyKey, signOut, donePath = '/inlogge
   </PublicPolicyFallback>
 }
 
-export function App({ state, start, commit, markAlbum, historyKey, sendMessage, eraseAccount, hosted, authStopped = false }: {
+export function App({ state, start, commit, markAlbum, historyKey, sendMessage, eraseAccount, hosted, connected = false, authStopped = false }: {
   state: DemoState | null | undefined
   start?: () => Promise<null>
   commit: Update
@@ -116,6 +116,7 @@ export function App({ state, start, commit, markAlbum, historyKey, sendMessage, 
   historyKey: string
   sendMessage?: SendMessage
   eraseAccount?: () => Promise<null>
+  connected?: boolean
   authStopped?: boolean
   hosted?: { signIn: ReactNode, landing?: ReactNode, placeholder?: ReactNode, notice?: ReactNode, logout?: () => void }
 }) {
@@ -125,7 +126,14 @@ export function App({ state, start, commit, markAlbum, historyKey, sendMessage, 
   const shouldFocus = useRef(false)
   const area = activeArea(path)
   const Policy = policyFor(area)
-  const { arrival, unread } = useUnreadMessages(state?.inbox)
+  const view = area === '/album' ? 'album' : area === '/berichten' ? 'messages' : null
+  const loadView = connected && view !== null
+  const screen = useQuery(api.exchange.get, loadView ? { view } : 'skip')
+  const threadId = area === '/berichten' ? path.split('/')[2] : undefined
+  const selected = useQuery(api.exchange.getConversation, connected && threadId ? { threadId, includeMessages: true } : 'skip')
+  const pageState = loadView ? state && screen ? { ...screen, unread: state.unread } : undefined : state
+  const screenReady = !!pageState
+  const { arrival, unread } = useUnreadMessages(state?.unread ?? state?.inbox)
   const unreadLabel = unread === 1 ? '1 ongelezen bericht' : `${unread} ongelezen berichten`
 
   useEffect(() => {
@@ -145,10 +153,12 @@ export function App({ state, start, commit, markAlbum, historyKey, sendMessage, 
 
   useEffect(() => {
     if (!shouldFocus.current) return
+    const heading = content.current?.querySelector('h1')
+    if (loadView && !screenReady && !heading) return
     shouldFocus.current = false
-    content.current?.querySelector('h1')?.focus({ preventScroll: true })
+    heading?.focus({ preventScroll: true })
     window.scrollTo(0, 0)
-  }, [path])
+  }, [path, loadView, screenReady])
 
   function navigate(next: string) {
     if (next === path) return
@@ -229,14 +239,15 @@ export function App({ state, start, commit, markAlbum, historyKey, sendMessage, 
       <main className="site-width" id="inhoud" ref={content}>
         <div className="page-transition" key={area}>
           {Policy ? <Policy /> :
-            area === '/inloggen' ? hosted?.signIn ?? <SignInPage navigate={navigate} /> : state ? (
-            area === '/ruilen' ? <OffersPage state={state} update={update} navigate={navigate} signedIn={!!sendMessage} /> :
-            area === '/album' ? <AlbumPage state={state} update={update} markAlbum={markAlbum} /> :
-            area === '/berichten' ? <MessagesPage state={state} threadId={path.split('/')[2]} demoKey={historyKey} update={update} sendMessage={sendMessage} navigate={navigate} /> :
-            area === '/instellingen' ? <SettingsPage state={state} update={update} demoKey={historyKey}
+            area === '/inloggen' ? hosted?.signIn ?? <SignInPage navigate={navigate} /> : pageState ? (
+            area === '/ruilen' ? <OffersPage state={pageState} update={update} navigate={navigate} signedIn={!!sendMessage} /> :
+            area === '/album' ? <AlbumPage state={pageState} update={update} markAlbum={markAlbum} /> :
+            area === '/berichten' ? <MessagesPage state={pageState} threadId={threadId} selected={selected} demoKey={historyKey} update={update} sendMessage={sendMessage} navigate={navigate} /> :
+            area === '/instellingen' ? <SettingsPage state={pageState} update={update} demoKey={historyKey}
               eraseAccount={eraseAccount} usesDescope={!!hosted} signOut={hosted?.logout} /> :
             <EmptyState title="Deze pagina bestaat niet" action={<Button component="a" href="/ruilen">Ga naar Ruilen</Button>}>Je vindt alle beschikbare stickers bij Ruilen.</EmptyState>
-          ) : area === '/ruilen' && hosted?.landing ? hosted.landing : hosted?.placeholder ? hosted.placeholder : authStopped ? (
+          ) : state && loadView ? <Group className="loading" role="status"><Loader size="sm" /><Text>Even laden…</Text></Group> :
+            area === '/ruilen' && hosted?.landing ? hosted.landing : hosted?.placeholder ? hosted.placeholder : authStopped ? (
             <EmptyState title="Proefaccount kon niet openen" action={<Button onClick={() => window.location.reload()}>Opnieuw proberen</Button>}>
               <Anchor href="/inloggen?proef=demo" data-reload>Terug naar inloggen</Anchor>
               Controleer of de lokale Convex-server draait.
