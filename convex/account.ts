@@ -5,6 +5,7 @@ import { internalMutation, mutation, type MutationCtx } from './_generated/serve
 import { collectorByIdentity, currentCollector, isDescopeSession } from './collectors'
 import { localOrigin } from './localOrigin'
 import { districtValidator, searchDistrictsValidator, uniqueDistricts } from './districts'
+import { removeReplyWait } from './replyWaits'
 
 const batchSize = 100
 
@@ -103,21 +104,24 @@ export const purge = internalMutation({
     if (!profile?.deleting) return null
     const hasConversations = await purgeConversations(ctx, collector)
     const hasTrades = await purgeTrades(ctx, collector)
-    const [messages, deliveries, notices, attempts, blockedBy, blocking] = await Promise.all([
+    const [messages, deliveries, notices, attempts, blockedBy, blocking, firstWaits, secondWaits] = await Promise.all([
       ctx.db.query('unreadMessages').withIndex('by_recipient', (q) => q.eq('recipient', collector)).take(batchSize),
       ctx.db.query('messageDeliveries').withIndex('by_sender_and_clientId', (q) => q.eq('sender', collector)).take(batchSize),
       ctx.db.query('digestNotices').withIndex('by_collector_and_offer', (q) => q.eq('collector', collector)).take(batchSize),
       ctx.db.query('digestAttempts').withIndex('by_collector_and_date', (q) => q.eq('collector', collector)).take(batchSize),
       ctx.db.query('messageBlocks').withIndex('by_blocked', (q) => q.eq('blocked', collector)).take(batchSize),
       ctx.db.query('messageBlocks').withIndex('by_blocker_and_blocked', (q) => q.eq('blocker', collector)).take(batchSize),
+      ctx.db.query('replyWaits').withIndex('by_first_and_second', (q) => q.eq('first', collector)).take(batchSize),
+      ctx.db.query('replyWaits').withIndex('by_second', (q) => q.eq('second', collector)).take(batchSize),
     ])
     for (const message of messages) await ctx.db.delete('unreadMessages', message._id)
     for (const delivery of deliveries) await ctx.db.delete('messageDeliveries', delivery._id)
     for (const notice of notices) await ctx.db.delete('digestNotices', notice._id)
     for (const attempt of attempts) await ctx.db.delete('digestAttempts', attempt._id)
     for (const block of [...blockedBy, ...blocking]) await ctx.db.delete('messageBlocks', block._id)
+    for (const waiting of [...firstWaits, ...secondWaits]) await removeReplyWait(ctx, waiting)
     if (hasConversations || hasTrades || messages.length || deliveries.length ||
-        notices.length || attempts.length || blockedBy.length || blocking.length) {
+        notices.length || attempts.length || blockedBy.length || blocking.length || firstWaits.length || secondWaits.length) {
       await ctx.scheduler.runAfter(0, internal.account.purge, { collector })
     } else {
       await ctx.db.delete('collectors', collector)

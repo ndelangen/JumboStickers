@@ -110,6 +110,13 @@ export default defineSchema({
     clientId: v.string(),
     conversation: v.optional(v.id('conversations')),
   }).index('by_sender_and_clientId', ['sender', 'clientId']).index('by_conversation', ['conversation']),
+  replyWaits: defineTable({
+    first: v.id('collectors'),
+    second: v.id('collectors'),
+    sender: v.id('collectors'),
+    overdue: v.boolean(),
+    deadlineJob: v.optional(v.id('_scheduled_functions')),
+  }).index('by_first_and_second', ['first', 'second']).index('by_second', ['second']),
   digestSubscriptions: defineTable({
     collector: v.id('collectors'),
     email: v.string(),
