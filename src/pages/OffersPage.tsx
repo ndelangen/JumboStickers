@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from 'convex/react'
 import { usePaginatedQuery } from 'convex-helpers/react'
-import { Avatar, Button, Group, Modal, Paper, Stack, Switch, Text, TextInput, Title } from '@mantine/core'
+import { Avatar, Button, Group, Modal, Paper, Stack, Text, TextInput, Title } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import { ArrowLeftRight, ArrowRight, Check, HandHeart, Search, Settings2 } from 'lucide-react'
 import type { District } from '../../convex/districts'
 import { SearchDistrictsField } from '../DistrictFields'
+import { defaultMarketplacePreferences, MarketplacePreferences } from '../MarketplacePreferences'
 import { EmptyState, AlbumProgress, StatusStamp, StickerDetails, StickerNumber, PhotoCredit } from '../ui'
 import { initialsFor, interestLabel, myOffers, personFor, type DemoState, type Offer, type Update } from '../demo'
 import { catalog, matchesSticker, stickerFor } from '../catalog'
@@ -54,8 +55,9 @@ export function OffersPage({ state, update, navigate, signedIn }: {
   const [districtOverride, setDistrictOverride] = useState<District[]>()
   const districts = districtOverride ?? state.searchDistricts ?? []
   const isBrowsing = filter === 'available' || filter === 'wanted'
-  const [hideUnanswered, setHideUnanswered] = useState(false)
-  const filterUnanswered = isBrowsing && hideUnanswered
+  const preferences = state.marketplacePreferences ?? defaultMarketplacePreferences
+  const filterUnanswered = isBrowsing && preferences.hideUnanswered
+  const filterBlocked = isBrowsing && preferences.hideBlocked
   const [linkedSticker, setLinkedSticker] = useState(requestedSticker)
   const [search, setSearch] = useState(linkedSticker)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -81,6 +83,7 @@ export function OffersPage({ state, update, navigate, signedIn }: {
     districts: isBrowsing ? districts : [],
     prioritizeMatches: isBrowsing || undefined,
     hideUnanswered: filterUnanswered || undefined,
+    hideBlocked: filterBlocked || undefined,
     indexedInterests: filter === 'interest' || undefined,
   } : 'skip', { initialNumItems: pageSize })
   const more = useMarketplace && (market.status === 'CanLoadMore' || market.status === 'LoadingMore')
@@ -173,10 +176,9 @@ export function OffersPage({ state, update, navigate, signedIn }: {
               ))}
             </div>
             {signedIn && isBrowsing && (
-              <Switch className="reply-filter"
-                label="Verberg aanbod als ik op antwoord wacht"
-                description="Na 7 dagen zonder antwoord. Bij een reactie verschijnt het aanbod weer."
-                checked={hideUnanswered} onChange={(event) => setHideUnanswered(event.currentTarget.checked)} />
+              <div className="marketplace-preferences">
+                <MarketplacePreferences preferences={preferences} />
+              </div>
             )}
           </div>
           {feedback && <Text role="status" c="dimmed" mb="xs">{feedback}</Text>}
@@ -231,7 +233,7 @@ export function OffersPage({ state, update, navigate, signedIn }: {
             </div>
           ) : more ? <Text c="dimmed">Geen passende exemplaren in de geladen resultaten.</Text> : (
             <EmptyState title={filter === 'mine' ? 'Nog geen dubbelen aangeboden' : 'Geen stickers gevonden'}>
-              {filter === 'mine' ? 'Zet een dubbel exemplaar in je album om het hier aan te bieden.' : filterUnanswered ? 'Zet het antwoordfilter uit om ook aanbod te zien van verzamelaars op wie je wacht.' : isBrowsing && districts.length ? 'Pas de wijken aan of wis het wijkfilter.' : 'Probeer een ander nummer of een andere selectie.'}
+              {filter === 'mine' ? 'Zet een dubbel exemplaar in je album om het hier aan te bieden.' : isBrowsing && districts.length ? 'Pas de wijken aan of wis het wijkfilter.' : filterUnanswered || filterBlocked ? 'Pas je filters aan of zoek op een ander nummer.' : 'Probeer een ander nummer of een andere selectie.'}
             </EmptyState>
           )}
           {more && <Group justify="center" mt="md">

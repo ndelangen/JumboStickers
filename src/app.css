@@ -386,8 +386,8 @@ body:has(#nl-badge-frame) .site-footer-inner { padding-block-end: 72px; }
 .filter-buttons .mantine-Button-root { min-height: 34px; padding-inline: 10px; font-size: .87rem; }
 .filter-buttons .mantine-Button-root[data-variant='subtle'] { color: var(--album-ink); }
 .filter-buttons .mantine-Button-root[aria-pressed='true'] { box-shadow: 0 1px 2px #251b2427; }
-.reply-filter { padding: 9px 10px; background: var(--album-white); border-radius: 8px; }
-.reply-filter .mantine-Switch-label { font-weight: 700; }
+.marketplace-preferences { padding: 10px; background: var(--album-white); border-radius: 8px; }
+.marketplace-preferences .mantine-Switch-label { font-weight: 700; }
 .offer { background: var(--album-white); transition: border-color 170ms ease, box-shadow 170ms ease; }
 .offer:hover, .offer:focus-within { border-color: #a5ad81; box-shadow: 0 3px 10px #392d1811; }
 .sticker-ticket { transition: transform 200ms cubic-bezier(.2,.75,.35,1.2); }

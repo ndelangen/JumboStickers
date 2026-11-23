@@ -88,6 +88,7 @@ export const eraseOwn = mutation({
     }
     await ctx.db.patch('collectors', collector._id, {
       deleting: true, displayName: '', district: undefined, searchDistricts: undefined, album: {}, digest: false,
+      hideUnanswered: undefined, hideBlocked: undefined,
     })
     const subscription = await ctx.db.query('digestSubscriptions').withIndex('by_collector', (q) => q.eq('collector', collector._id)).unique()
     if (subscription) await ctx.db.delete('digestSubscriptions', subscription._id)
