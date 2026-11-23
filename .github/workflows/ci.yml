@@ -2,11 +2,16 @@ name: CI
 
 on:
   pull_request:
+  workflow_dispatch:
   push:
     branches: [main]
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build:
@@ -21,3 +26,44 @@ jobs:
       - run: npm ci
       - run: npx --no-install tsc -p convex
       - run: npm run build
+
+  deploy:
+    name: Deploy to Netlify
+    needs: build
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: https://stickerruil-zwolle.netlify.app
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Build with production configuration
+        env:
+          VITE_CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
+          VITE_DESCOPE_PROJECT_ID: ${{ vars.VITE_DESCOPE_PROJECT_ID }}
+          VITE_DESCOPE_API_URL: ${{ vars.VITE_DESCOPE_API_URL }}
+          VITE_DESCOPE_FLOW_ID: ${{ vars.VITE_DESCOPE_FLOW_ID }}
+          VITE_PRIVACY_CONTROLLER_NAME: ${{ vars.VITE_PRIVACY_CONTROLLER_NAME }}
+          VITE_PRIVACY_CONTACT_EMAIL: ${{ vars.VITE_PRIVACY_CONTACT_EMAIL }}
+        run: |
+          [[ "$VITE_CONVEX_URL" == 'https://hidden-loris-743.eu-west-1.convex.cloud' ]]
+          [[ "$VITE_DESCOPE_API_URL" == 'https://api.euc1.descope.com' ]]
+          [[ "$VITE_DESCOPE_PROJECT_ID" =~ ^P[a-zA-Z0-9]+$ ]]
+          [[ "$VITE_DESCOPE_FLOW_ID" == 'stickerruil-inloggen' ]]
+          : "${VITE_PRIVACY_CONTROLLER_NAME:?Set the production privacy controller name}"
+          : "${VITE_PRIVACY_CONTACT_EMAIL:?Set the production privacy contact email}"
+          npm run build
+      - name: Publish and verify the live site
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ vars.NETLIFY_SITE_ID }}
+        run: node scripts/deploy-netlify.mjs

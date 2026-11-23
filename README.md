@@ -25,4 +25,14 @@ Users can delete their profile and trade data in **Instellingen** (Settings). Th
 
 Set `VITE_PRIVACY_CONTROLLER_NAME` and `VITE_PRIVACY_CONTACT_EMAIL` in the production build. The privacy notice displays both values to visitors.
 
+## Publish to Netlify
+
+GitHub Actions checks pull requests. After CI passes on `main`, it builds with the production Vite variables, uploads the static site to Netlify and checks the published deployment and live files. Run **CI** manually on `main` to retry a release. The Netlify site has no Git-triggered builds.
+
+Each release keeps the previous build's assets available for at least seven days so open tabs can still load scripts and fonts.
+
+Configure the six production `VITE_*` variables and `NETLIFY_SITE_ID` in GitHub's `production` environment. Store the dedicated deploy credential there as the `NETLIFY_AUTH_TOKEN` secret. Its Netlify permissions come from the issuing account. Rotate it before it expires.
+
+Deploy compatible Convex changes separately before merging frontend changes that need them. Netlify's production deploy credit limit also applies to GitHub Actions uploads.
+
 The [photo of Zwolle](https://commons.wikimedia.org/wiki/File:Zwolle_Centrum.jpg) is by Deerpeter and is licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The social preview uses a crop of the photo under the same license.
