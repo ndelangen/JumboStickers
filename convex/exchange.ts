@@ -19,6 +19,7 @@ const snapshotValidator = v.object({
   ...demoStateFields,
   people: peopleValidator,
   collectorId: v.id('collectors'),
+  marketplacePreferences: v.optional(v.object({ hideUnanswered: v.boolean(), hideBlocked: v.boolean() })),
   unread: v.optional(v.array(v.object({ id: v.id('unreadMessages'), threadId: v.id('conversations') }))),
 })
 const unreadPerSender = 5
@@ -128,6 +129,10 @@ export const get = query({
       displayName: me.displayName,
       district: me.district,
       searchDistricts: me.searchDistricts,
+      marketplacePreferences: view === 'shell' ? {
+        hideUnanswered: me.hideUnanswered ?? true,
+        hideBlocked: me.hideBlocked ?? true,
+      } : undefined,
       digest: me.digest,
       album: me.album,
       people: Object.fromEntries(profiles.map((profile) => {
@@ -160,10 +165,23 @@ function inboxMessage(message: Doc<'unreadMessages'>, historyVersion: number | u
   return { id: message._id, threadId: message.conversation, text: message.text, sentAt: message._creationTime, historyVersion }
 }
 
-function messageBlock(ctx: QueryCtx | MutationCtx, blocker: Id<'collectors'>, blocked: Id<'collectors'>) {
+export function messageBlock(ctx: QueryCtx | MutationCtx, blocker: Id<'collectors'>, blocked: Id<'collectors'>) {
   return ctx.db.query('messageBlocks').withIndex('by_blocker_and_blocked',
     (q) => q.eq('blocker', blocker).eq('blocked', blocked)).unique()
 }
+
+export const setMarketplacePreference = mutation({
+  args: {
+    preference: v.union(v.literal('hideUnanswered'), v.literal('hideBlocked')),
+    enabled: v.boolean(),
+  },
+  returns: v.null(),
+  handler: async (ctx, { preference, enabled }) => {
+    const me = await requireCollector(ctx)
+    if ((me[preference] ?? true) !== enabled) await ctx.db.patch('collectors', me._id, { [preference]: enabled })
+    return null
+  },
+})
 
 async function messagesFrom(ctx: MutationCtx, recipient: Id<'collectors'>, sender: Id<'collectors'>, limit: number) {
   const messages = await ctx.db.query('unreadMessages').withIndex('by_recipient_and_sender',

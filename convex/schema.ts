@@ -41,6 +41,8 @@ export default defineSchema({
     displayName: v.string(),
     district: v.optional(districtValidator),
     searchDistricts: v.optional(searchDistrictsValidator),
+    hideUnanswered: v.optional(v.boolean()),
+    hideBlocked: v.optional(v.boolean()),
     digest: v.boolean(),
     album: v.record(v.string(), albumStatus),
     deleting: v.optional(v.boolean()),

@@ -7,6 +7,7 @@ import type { FunctionArgs } from 'convex/server'
 import type { District } from '../../convex/districts'
 import { HomeDistrictField, SearchDistrictsField } from '../DistrictFields'
 import { DistrictMap } from '../DistrictMap'
+import { MarketplacePreferences } from '../MarketplacePreferences'
 import { clearLocalHistory } from '../chatStorage'
 import { errorMessage, type DemoState, type Update } from '../demo'
 import { PageHeading, PhotoCredit } from '../ui'
@@ -165,13 +166,14 @@ export function SignupProfile({ register }: {
   </Paper>
 }
 
-export function SettingsPage({ state, update, demoKey, eraseAccount, usesDescope, signOut }: {
+export function SettingsPage({ state, update, demoKey, eraseAccount, usesDescope, signOut, signedIn }: {
   state: DemoState
   update: Update
   demoKey: string
   eraseAccount?: () => Promise<null>
   usesDescope: boolean
   signOut?: () => void
+  signedIn: boolean
 }) {
   const [displayName, setDisplayName] = useState(state.displayName)
   const [districtDraft, setDistrictDraft] = useState<District | null>()
@@ -235,6 +237,12 @@ export function SettingsPage({ state, update, demoKey, eraseAccount, usesDescope
             </Group>
           </div>
         </Paper>
+        {signedIn && <Paper withBorder p="lg">
+          <Stack>
+            <Title order={2}>Filters voor ruilaanbod</Title>
+            <MarketplacePreferences preferences={state.marketplacePreferences} />
+          </Stack>
+        </Paper>}
         <Paper withBorder p="lg">
           <Stack>
             <Title order={2}>Chat op dit apparaat</Title>

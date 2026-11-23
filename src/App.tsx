@@ -244,7 +244,7 @@ export function App({ state, start, commit, markAlbum, historyKey, sendMessage, 
             area === '/album' ? <AlbumPage state={pageState} update={update} markAlbum={markAlbum} /> :
             area === '/berichten' ? <MessagesPage state={pageState} threadId={threadId} selected={selected} demoKey={historyKey} update={update} sendMessage={sendMessage} navigate={navigate} /> :
             area === '/instellingen' ? <SettingsPage state={pageState} update={update} demoKey={historyKey}
-              eraseAccount={eraseAccount} usesDescope={!!hosted} signOut={hosted?.logout} /> :
+              eraseAccount={eraseAccount} usesDescope={!!hosted} signOut={hosted?.logout} signedIn={!!sendMessage} /> :
             <EmptyState title="Deze pagina bestaat niet" action={<Button component="a" href="/ruilen">Ga naar Ruilen</Button>}>Je vindt alle beschikbare stickers bij Ruilen.</EmptyState>
           ) : state && loadView ? <Group className="loading" role="status"><Loader size="sm" /><Text>Even laden…</Text></Group> :
             area === '/ruilen' && hosted?.landing ? hosted.landing : hosted?.placeholder ? hosted.placeholder : authStopped ? (
