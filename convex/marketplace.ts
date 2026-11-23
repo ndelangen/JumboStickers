@@ -6,6 +6,7 @@ import { query, type QueryCtx } from './_generated/server'
 import { offerLimit, validNumbers } from './album'
 import { currentCollector } from './collectors'
 import { districtValidator, searchDistrictsValidator } from './districts'
+import { isWaitingForReply } from './replyWaits'
 import schema, { offer } from './schema'
 
 const pageSizeLimit = 48
@@ -40,11 +41,12 @@ export const list = query({
     numbers: v.union(v.null(), v.array(v.number())),
     districts: searchDistrictsValidator,
     prioritizeMatches: v.optional(v.boolean()),
+    hideUnanswered: v.optional(v.boolean()),
     indexedInterests: v.optional(v.boolean()),
     paginationOpts: paginationOptsValidator,
   },
   returns: paginationResultValidator(listing),
-  handler: async (ctx, { filter, numbers, districts, prioritizeMatches, indexedInterests, paginationOpts }) => {
+  handler: async (ctx, { filter, numbers, districts, prioritizeMatches, hideUnanswered, indexedInterests, paginationOpts }) => {
     const collector = await currentCollector(ctx)
     if (!collector || numbers?.length === 0) return { page: [], isDone: true, continueCursor: '' }
 
@@ -53,6 +55,7 @@ export const list = query({
     const ownOffers = await ctx.db.query('offers').withIndex('by_owner', (q) => q.eq('owner', viewer)).take(offerLimit)
     const tradableNumbers = [...new Set(ownOffers.filter((item) => item.status === 'available').map((item) => item.number))]
     const profiles = new Map<Doc<'collectors'>['_id'], Promise<Doc<'collectors'> | null>>()
+    const replyWaits = new Map<Doc<'collectors'>['_id'], Promise<boolean>>()
 
     const selectedDistricts = new Set(filter === 'available' ? districts : [])
 
@@ -72,6 +75,14 @@ export const list = query({
       const canTrade = item.status === 'available' && album[item.number] === 'wanted' &&
         tradableNumbers.some((number) => owner.album[number] === 'wanted')
       if (matchFilter !== undefined && canTrade !== matchFilter) return null
+      if (filter === 'available' && hideUnanswered) {
+        let waiting = replyWaits.get(item.owner)
+        if (!waiting) {
+          waiting = isWaitingForReply(ctx, viewer, item.owner)
+          replyWaits.set(item.owner, waiting)
+        }
+        if (await waiting) return null
+      }
       const interested = knownInterest || (item.interestedCount > 0 && await hasInterest(item))
       return {
         offer: {

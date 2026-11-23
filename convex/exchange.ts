@@ -8,6 +8,7 @@ import { exchangeCommand } from './demo'
 import { currentCollector, requireCollector } from './collectors'
 import { demoStateFields, incoming, offer as offerValidator } from './schema'
 import { districtValidator, uniqueDistricts } from './districts'
+import { recordMessageForReplyFilter } from './replyWaits'
 
 const peopleValidator = v.record(v.string(), v.object({
   name: v.string(),
@@ -480,6 +481,7 @@ export const send = mutation({
     const queued = await ctx.db.query('unreadMessages').withIndex('by_recipient', (q) => q.eq('recipient', recipient)).take(inboxLimit)
     if (queued.length >= inboxLimit) throw new ConvexError('De inbox van deze verzamelaar zit vol. Probeer het later opnieuw.')
     await ctx.db.insert('unreadMessages', { conversation: conversation._id, recipient, sender: me._id, text: body })
+    await recordMessageForReplyFilter(ctx, me._id, recipient)
     const expiry = await ctx.db.query('unreadExpiry').unique()
     if (!expiry) await scheduleUnreadExpiry(ctx, null)
     await showConversation(ctx, conversation, recipient)

@@ -42,6 +42,7 @@ export function PrivacyPage() {
         <Text>We bewaren berichttekst tijdelijk in onze database. Zodra de ontvanger het bericht in de geopende chat ziet en diens browser het heeft opgeslagen, verwijderen we de tekst automatisch uit de actieve database. Een ongelezen bericht vervalt na 30 dagen. We wissen het eerder als de ontvanger de afzender blokkeert of als een van jullie het Stickerruil-account verwijdert.</Text>
         <Text>Als je iemand blokkeert, kunnen jullie elkaar geen nieuwe berichten sturen. We bewaren de blokkade totdat je die opheft of een van jullie het Stickerruil-account verwijdert.</Text>
         <Text>Om te voorkomen dat hetzelfde bericht twee keer wordt verzonden, bewaren we ongeveer één dag een verzendkenmerk zonder berichttekst. Gelezen en verzonden berichten blijven in de gebruikte browsers staan totdat de geschiedenis daar wordt gewist.</Text>
+        <Text>Voor het antwoordfilter houden we per tweetal verzamelaars bij wie op antwoord wacht en of die al zeven dagen wacht. Andere verzamelaars zien die informatie niet. Een nieuw antwoord werkt de gegevens bij. Als een van jullie het account verwijdert, wissen we ze.</Text>
       </PolicySection>
       <PolicySection title="Cookies en browseropslag">
         <Text>De site gebruikt browseropslag voor je inlogsessie en je chatgeschiedenis. Vanuit <Anchor href="/instellingen">Instellingen</Anchor> kun je de chatgeschiedenis in deze browser wissen. Je kunt ook de sitegegevens via je browser wissen. Daarmee kun je uitloggen en raak je deze lokale geschiedenis kwijt.</Text>

@@ -22,6 +22,7 @@ import type * as inbox from "../inbox.js";
 import type * as localIdentity from "../localIdentity.js";
 import type * as localOrigin from "../localOrigin.js";
 import type * as marketplace from "../marketplace.js";
+import type * as replyWaits from "../replyWaits.js";
 
 import type {
   ApiFromModules,
@@ -44,6 +45,7 @@ declare const fullApi: ApiFromModules<{
   localIdentity: typeof localIdentity;
   localOrigin: typeof localOrigin;
   marketplace: typeof marketplace;
+  replyWaits: typeof replyWaits;
 }>;
 
 /**
